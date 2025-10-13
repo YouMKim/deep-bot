@@ -3,6 +3,7 @@ Configuration management for the Discord bot.
 Handles loading environment variables securely.
 """
 import os
+from discord import Intents
 from dotenv import load_dotenv
 from typing import Optional
 
@@ -53,9 +54,7 @@ class Config:
     @classmethod
     def get_discord_intents(cls):
         """Get Discord intents configuration."""
-        import discord
-        
-        intents = discord.Intents.default()
+        intents = Intents.default()
         intents.message_content = True  # Required for message content access
         intents.members = True  # If you need member information
         intents.guilds = True   # If you need guild information

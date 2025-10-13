@@ -5,7 +5,9 @@ This is the entry point for your Discord bot.
 import asyncio
 import logging
 import sys
+import discord
 from discord.ext import commands
+from discord.ext.commands import CommandNotFound, MissingRequiredArgument, BadArgument, CommandOnCooldown
 from config import Config
 
 # Set up logging
@@ -23,47 +25,69 @@ class DeepBot(commands.Bot):
     """Main bot class."""
     
     def __init__(self):
-        # TODO: Add configuration validation here
-        # Hint: Use Config.validate() to check if required environment variables are set
-        
-        # TODO: Initialize bot with intents
-        # Hint: Use Config.get_discord_intents() to get the intents
-        # Hint: Use super().__init__() with command_prefix, intents, etc.
-        
-        # TODO: Set owner_id and debug_mode from Config
-        pass
+        Config.validate()
+    
+        super().__init__(
+            command_prefix=Config.BOT_PREFIX,
+            intents=Config.get_discord_intents(),
+            owner_id=Config.BOT_OWNER_ID,
+            strip_after_prefix=True,
+        )
+        self.debug_mode = Config.DEBUG_MODE
+
         
     async def on_ready(self):
         """Called when the bot is ready."""
-        # TODO: Log that the bot has connected
-        # TODO: Log number of guilds and users
-        # TODO: Set bot activity/status
-        pass
+        logger.info(f"Bot has connected to Discord")
+        logger.info(f"Bot has connected to {len(self.guilds)} guilds")
+        logger.info(f"Bot has connected to {len(self.users)} users")
+        
+        # Set bot activity
+        activity = discord.Activity(type=discord.ActivityType.listening, name=f"{Config.BOT_PREFIX}help")
+        await self.change_presence(activity=activity)
+
         
     async def on_command_error(self, ctx, error):
         """Handle command errors."""
-        # TODO: Handle different types of errors:
-        # - CommandNotFound (ignore)
-        # - MissingRequiredArgument (show helpful message)
-        # - BadArgument (show error message)
-        # - CommandOnCooldown (show cooldown time)
-        # - Other errors (log and show generic message)
-        pass
+        if isinstance(error, CommandNotFound):
+            # Ignore command not found errors
+            return
+        
+        elif isinstance(error, MissingRequiredArgument):
+            await ctx.send(f"❌ Missing required argument: `{error.param.name}`")
+        
+        elif isinstance(error, BadArgument):
+            await ctx.send(f"❌ Invalid argument: {error}")
+        
+        elif isinstance(error, CommandOnCooldown):
+            await ctx.send(f"⏰ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.")
+        
+        else:
+            # Log the error and send a generic message
+            logger.error(f"Command error in {ctx.command}: {error}", exc_info=True)
+            await ctx.send("❌ An error occurred while executing the command.")
     
     async def setup_hook(self):
         """Called when the bot is starting up."""
-        # TODO: Load cogs here
-        # Hint: Use await self.load_extension() for each cog
-        pass
+        # Load cogs
+        try:
+            await self.load_extension('cogs.basic')
+            logger.info("Loaded basic cog")
+        except Exception as e:
+            logger.error(f"Failed to load basic cog: {e}")
 
 async def main():
     """Main function to run the bot."""
-    # TODO: Create bot instance
-    # TODO: Start the bot with Config.DISCORD_TOKEN
-    # TODO: Handle KeyboardInterrupt and other exceptions
-    pass
+    bot = DeepBot()
+    try:
+        await bot.start(Config.DISCORD_TOKEN)
+    except KeyboardInterrupt:
+        logger.info("Bot has been stopped with keyboard interrupt")
+        await bot.close()
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        await bot.close()
+        sys.exit(1)
 
 if __name__ == "__main__":
-    # TODO: Import discord module
-    # TODO: Run the main function with asyncio.run()
-    pass
+    asyncio.run(main())
