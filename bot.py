@@ -75,6 +75,12 @@ class DeepBot(commands.Bot):
             logger.info("Loaded basic cog")
         except Exception as e:
             logger.error(f"Failed to load basic cog: {e}")
+        try:
+            await self.load_extension('cogs.summary')
+            logger.info("Loaded summary cog")
+        except Exception as e:
+            logger.error(f"Failed to load summary cog: {e}")
+        
 
 async def main():
     """Main function to run the bot."""

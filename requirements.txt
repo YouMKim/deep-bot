@@ -22,6 +22,7 @@ pytest-mock>=3.11.0
 # sqlite3 (built-in)
 # asyncpg>=0.29.0  # For PostgreSQL if needed
 
+
 # Optional: Additional utilities
 # requests>=2.31.0
 # asyncio-mqtt>=0.13.0  # For MQTT if needed
