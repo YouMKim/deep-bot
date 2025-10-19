@@ -36,6 +36,11 @@ venv.bak/
 *.log
 logs/
 
+#data 
+data/chroma_db/
+data/*.sqlite3
+data/*.bin
+
 # Temporary files
 *.tmp
 *.temp
