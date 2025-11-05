@@ -28,10 +28,17 @@ This guide walks you through implementing each phase of the Discord Chunking Sys
 17. [Phase 16: Advanced RAG Techniques (HyDE, Self-RAG, RAG Fusion)](./PHASE_16.md) 🔥 NEW
 18. [Phase 17: RAG Strategy Comparison Dashboard](./PHASE_17.md) 🔥 NEW
 
+### Security & Production (Phase 18+) 🔒 NEW
+19. [Phase 18: Security & Prompt Injection Defense](./PHASE_18.md) 🔒 NEW
+
 ### Deployment & Production
-19. [Deployment Guide - Docker, VPS, Cloud](./DEPLOYMENT_GUIDE.md) 🆕 NEW
-20. [Quick Reference Checklists](#quick-reference)
-21. [Common Pitfalls & Debugging](#common-pitfalls)
+20. [Deployment Guide - Docker, VPS, Cloud](./DEPLOYMENT_GUIDE.md) 🆕 NEW
+21. [Quick Reference Checklists](#quick-reference)
+22. [Common Pitfalls & Debugging](#common-pitfalls)
+
+### Project Assessment & Future Roadmap 📋 NEW
+23. [Project Assessment - What's Missing & Future Phases](./PROJECT_ASSESSMENT.md) 📋 NEW
+24. [Critical Project Review & Improvements](./PROJECT_REVIEW_AND_IMPROVEMENTS.md) ⚠️ NEW
 
 ---
 
@@ -108,6 +115,17 @@ See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete deployment instruc
   - A/B testing framework
   - Interactive comparison tools
 - **Goal:** Master state-of-the-art RAG techniques and understand when to use each
+
+### Milestone 8: Security & Production Hardening 🔒 NEW
+- 🔒 Phase 18: Security & Prompt Injection Defense
+  - Prompt injection detection & prevention
+  - Multi-layer defense strategy
+  - Input sanitization & validation
+  - System prompt protection
+  - Output validation
+  - Rate limiting per user
+  - Security audit logging
+- **Goal:** Production-ready, secure RAG system resistant to attacks
 
 ---
 
