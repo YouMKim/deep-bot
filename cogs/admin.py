@@ -4,6 +4,7 @@ import asyncio
 import logging
 from services.memory_service import MemoryService
 from services.message_loader import MessageLoader
+from services.ai_service import AIService
 from utils.discord_utils import format_discord_message
 from typing import List
 
@@ -16,6 +17,7 @@ class Admin(commands.Cog):
         self.memory_service = MemoryService()
         self.message_loader = MessageLoader(self.memory_service)
         self.logger = logging.getLogger(__name__)
+        self.ai_service = None
 
     async def cog_command_error(self, ctx, error):
         """Handle errors in admin commands"""
@@ -73,6 +75,126 @@ class Admin(commands.Cog):
         
         await ctx.send(embed=embed)
 
+    @commands.command(name='check_blacklist', help='Check the current blacklist configuration')
+    async def check_blacklist(self, ctx):
+        """Check the current blacklist configuration"""
+        from config import Config
+        import os
+        
+        embed = discord.Embed(
+            title="🚫 Blacklist Configuration",
+            color=discord.Color.orange()
+        )
+        
+        # Show raw environment variable
+        raw_env = os.getenv("BLACKLIST_IDS", "")
+        embed.add_field(
+            name="Raw ENV Variable (BLACKLIST_IDS)",
+            value=f"`{raw_env if raw_env else '(not set)'}`",
+            inline=False
+        )
+        
+        if Config.BLACKLIST_IDS:
+            blacklist_str = "\n".join([f"• `{user_id}`" for user_id in Config.BLACKLIST_IDS])
+            embed.add_field(
+                name=f"Blacklisted User IDs ({len(Config.BLACKLIST_IDS)})",
+                value=blacklist_str,
+                inline=False
+            )
+            
+            # Check if current author is blacklisted
+            is_blacklisted = ctx.author.id in Config.BLACKLIST_IDS
+            embed.add_field(
+                name="Are you blacklisted?",
+                value="✅ Yes (you are blacklisted)" if is_blacklisted else "❌ No (you are not blacklisted)",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="Loaded Blacklist Status",
+                value="❌ No blacklisted users loaded into Config.BLACKLIST_IDS",
+                inline=False
+            )
+        
+        embed.add_field(
+            name="Your User ID",
+            value=f"`{ctx.author.id}` (type: {type(ctx.author.id).__name__})",
+            inline=False
+        )
+        
+        if Config.BLACKLIST_IDS:
+            embed.add_field(
+                name="Blacklist Types",
+                value=f"[{', '.join([type(x).__name__ for x in Config.BLACKLIST_IDS[:3]])}]",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
+    @commands.command(name='reload_blacklist', help='Reload the blacklist from environment variables (Admin only)')
+    async def reload_blacklist(self, ctx):
+        """Reload the blacklist from environment variables"""
+        from config import Config
+        import os
+        
+        # Manual owner check
+        if str(ctx.author.id) != str(Config.BOT_OWNER_ID):
+            await ctx.send("🚫 **Access Denied!** Only the bot admin can reload the blacklist.")
+            return
+        
+        try:
+            # Show before state
+            before_count = len(Config.BLACKLIST_IDS)
+            raw_env = os.getenv("BLACKLIST_IDS", "")
+            
+            # Reload
+            Config.load_blacklist()
+            
+            # Show after state
+            after_count = len(Config.BLACKLIST_IDS)
+            
+            embed = discord.Embed(
+                title="🔄 Blacklist Reload",
+                color=discord.Color.green()
+            )
+            
+            embed.add_field(
+                name="Raw ENV Variable",
+                value=f"`{raw_env if raw_env else '(not set)'}`",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="Before Reload",
+                value=f"{before_count} user(s)",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="After Reload",
+                value=f"{after_count} user(s)",
+                inline=True
+            )
+            
+            if Config.BLACKLIST_IDS:
+                blacklist_str = "\n".join([f"• `{user_id}`" for user_id in Config.BLACKLIST_IDS])
+                embed.add_field(
+                    name="Loaded User IDs",
+                    value=blacklist_str,
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="⚠️ Warning",
+                    value="No blacklist IDs loaded. Check your .env file.",
+                    inline=False
+                )
+            
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            await ctx.send(f"❌ Error reloading blacklist: {e}")
+
     @commands.command(name='load_channel', help='Load all messages from current channel into memory (Admin only)')
     async def load_channel(self, ctx, limit: int = None):
         """Load all messages from the current channel into memory"""
@@ -127,6 +249,82 @@ class Admin(commands.Cog):
             
         except Exception as e:
             await ctx.send(f"❌ Error loading channel messages: {e}")
+    
+    @commands.command(name='ai_provider', help='Switch AI provider (Admin only)')
+    async def ai_provider(self, ctx, provider: str = None):
+        """
+        Get or set the AI provider. (Admin only)
+        
+        Usage:
+            !ai_provider - Show current provider
+            !ai_provider openai - Switch to OpenAI
+            !ai_provider anthropic - Switch to Anthropic
+        """
+        from config import Config
+        
+        # Manual owner check
+        if str(ctx.author.id) != str(Config.BOT_OWNER_ID):
+            await ctx.send("🚫 **Access Denied!** Only the bot admin can change AI provider.")
+            return
+        
+        # Get AI service from Summary cog
+        summary_cog = self.bot.get_cog("Summary")
+        if not summary_cog:
+            await ctx.send("❌ Summary cog not loaded. Cannot access AI service.")
+            return
+        
+        if provider is None:
+            # Show current provider
+            embed = discord.Embed(
+                title="🤖 Current AI Provider",
+                description=f"Currently using: **{summary_cog.ai_service.provider_name}**",
+                color=discord.Color.blue()
+            )
+            
+            # Add info about available providers
+            embed.add_field(
+                name="Available Providers",
+                value="• `openai` - GPT models (fast, versatile)\n• `anthropic` - Claude models (advanced reasoning)",
+                inline=False
+            )
+            
+            # Show default model
+            default_model = summary_cog.ai_service.provider.get_default_model()
+            embed.add_field(
+                name="Default Model",
+                value=default_model,
+                inline=True
+            )
+            
+            await ctx.send(embed=embed)
+            return
+        
+        # Validate provider
+        if provider.lower() not in ["openai", "anthropic"]:
+            await ctx.send("❌ Invalid provider. Use `openai` or `anthropic`")
+            return
+        
+        # Switch provider
+        try:
+            summary_cog.ai_service = AIService(provider_name=provider.lower())
+            
+            embed = discord.Embed(
+                title="✅ Provider Switched",
+                description=f"Now using: **{provider}**",
+                color=discord.Color.green()
+            )
+            
+            # Get default model info
+            default_model = summary_cog.ai_service.provider.get_default_model()
+            embed.add_field(
+                name="Default Model",
+                value=default_model,
+                inline=True
+            )
+            
+            await ctx.send(embed=embed)
+        except Exception as e:
+            await ctx.send(f"❌ Error switching provider: {e}")
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))

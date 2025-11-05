@@ -2,106 +2,64 @@ import discord
 from discord.ext import commands
 import asyncio
 import logging
-from config import Config
-from typing import List, Dict, Optional
+from discord.ext.commands import HTTPException
+from config import Config, Callable, Optional, Dict
 from datetime import datetime
-from services.memory_service import MemoryService
+from services.message_storage import MessageStorage
 from utils.discord_utils import format_discord_message 
 
 class MessageLoader: 
-    def __init__(self, memory_service: MemoryService):
-        self.memory_service = memory_service 
+    def __init__(self, message_storage: MessageStorage):
+        self.message_storage = message_storage
         self.logger = logging.getLogger(__name__) 
-    
-
-    async def load_channel_messages(self, channel: discord.TextChannel, limit: Optional[int] = None, before: Optional[discord.Message] = None, after: Optional[discord.Message] = None) -> Dict[str, int]:
-        """Load messages from a specific channel
-
-        Args:
-            channel: The channel to load messages from
-            limit: The maximum number of messages to load
-            before: Load messages before this message
-            after: Load messages after this message
+        self.rate_limit_delay = Config.MESSAGE_FETCH_DELAY
+        self.batch_size = Config.MESSAGE_FETCH_BATCH_SIZE
+        self.progress_callback: Optional[Callable[[int, int], None]] = None
         
-        Returns:
-            Dict with stats on loading  
-        """
+    def set_progress_callback(self, callback: Callable[[int, int], None]):
+        self.progress_callback = callback 
 
-        self.logger.info(f"Loading messages from #{channel.name} ({channel.id})")
-
-        stats = {
-            "total_processed": 0,
-            "successfully_loaded": 0, 
-            "skipped_bot_messages": 0,
-            "skipped_empty_messages": 0,
-            "skipped_blacklisted": 0,
-            "skipped_commands": 0,
-            "errors": 0,
-            "start_time": datetime.now(),
-            "end_time": None, 
-        }
-
-        try:
-
-            batch_size = 50  
-            processed_in_batch = 0
+    async def _rate_limit_delay(self):
+        await asyncio.sleep(self.rate_limit_dealy)
+    
+    async def _handle_rate_limit_error(self, error: HTTPException, retry_count:int):
+        if error.status == 429:
+            retry_after = getattr(error, 'retry_after', None) or (2 ** retry_count)
+            wait_time = min(retry_after, 60)  
             
-            async for message in channel.history(limit=limit, before=before, after=after, oldest_first=False):
-                stats["total_processed"] += 1
-                
-                # Skip messages that shouldn't be stored
-                if message.author.bot:
-                    stats["skipped_bot_messages"] += 1
-                    continue
-                elif message.author.id in Config.BLACKLIST_IDS:
-                    stats["skipped_blacklisted"] += 1
-                    continue
-                elif not message.content.strip():
-                    stats["skipped_empty_messages"] += 1
-                    continue
-                elif message.content.startswith(Config.BOT_PREFIX):
-                    stats["skipped_commands"] += 1
-                    continue
-                else:
-                    try:
-                        message_data = format_discord_message(message)
-                        success = await self.memory_service.store_message(message_data)
-                        
-                        if success:
-                            stats["successfully_loaded"] += 1
-                        else:
-                            stats["errors"] += 1
-                            
-                    except Exception as e:
-                        self.logger.error(f"Error processing message {message.id}: {e}")
-                        stats["errors"] += 1
-                
-                processed_in_batch += 1
-                
-                if processed_in_batch >= batch_size:
-                    self.logger.info(f"Processed {stats['total_processed']} messages from #{channel.name}")
-                    await asyncio.sleep(0.5)  
-                    processed_in_batch = 0 
-                
-                if stats["total_processed"] % 10 == 0:
-                    await asyncio.sleep(0.1) 
-
-            stats['end_time'] = datetime.now()
-            duration = (stats['end_time'] - stats['start_time']).total_seconds()
-            
-            self.logger.info(
-                f"Completed loading from #{channel.name}: "
-                f"{stats['successfully_loaded']} stored, "
-                f"{stats['skipped_bot_messages']} bot messages skipped, "
-                f"{stats['skipped_blacklisted']} blacklisted users skipped, "
-                f"{stats['skipped_empty_messages']} empty messages skipped, "
-                f"{stats['skipped_commands']} commands skipped, "
-                f"{stats['errors']} errors, "
-                f"took {duration:.1f} seconds"
+            self.logger.warning(
+                f"Rate limited! Waiting {wait_time}s before retry "
+                f"(attempt {retry_count + 1}/{Config.MESSAGE_FETCH_MAX_RETRIES})"
             )
-            
-            return stats
+            await asyncio.sleep(wait_time)
+            return True  
+        return False 
 
+    async def load_channel_messages(
+        self,
+        channel: discord.TextChannel,
+        limit: Optional[int] = None,
+        before: Optional = None,
+        after: Optional = None,
+        rate_limit_delay: Optional[float] = None
+    ) -> Dict[str, Any]:
+        if rate_limit_delay:
+            self._rate_limit_delay()
+
+        channel_id = str(channel.id)
+        self.logger.info(f"Loading messages from #{channel.name} ({channel_id})")
+
+        checkpoint = self.message_storage.get_checkpoint(channel_id)
+        resume_from_oldest = False 
+
+        if checkpoint and before is None and after is None:
+            if checkpoint.get('oldest_message_timestamp'):
+                try:
+                    oldest_timestamp = checkpoint['oldest_message_timestamp']
+                    oldest_message_id = checkpoint['oldest_message_id']
+
+
+        
 
         except Exception as e:
             self.logger.error(f"Error loading messages from #{channel.name} ({channel.id}): {e}")

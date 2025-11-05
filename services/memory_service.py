@@ -49,7 +49,7 @@ class MemoryService:
                 documents=[content],
                 embeddings=[embedding.tolist()],
                 metadatas=[metadata],  # Note: 'metadatas' not 'metadata'
-                ids=[message_data.get("id", "")],
+                ids=[str(message_data.get("id", ""))],
             )
             return True
         except Exception as e:

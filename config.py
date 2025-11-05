@@ -29,14 +29,24 @@ class Config:
 
     # Security Settings
     DEBUG_MODE: bool = os.getenv("DEBUG_MODE", "False").lower() == "true"
+    TEST_MODE: bool = os.getenv("TEST_MODE", "False").lower() == "true"
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     
     # Message Loading Settings
     BLACKLIST_IDS: list = []
+
+    #Discord Message rate limits
+    MESSAGE_FETCH_DELAY: float = float(os.getenv("MESSAGE_FETCH_DELAY", "1.0"))
+    MESSAGE_FETCH_BATCH_SIZE: int = int(os.getenv("MESSAGE_FETCH_BATCH_SIZE", "100"))
+    MESSAGE_FETCH_PROGRESS_INTERVAL: int = int(os.getenv("MESSAGE_FETCH_PROGRESS_INTERVAL", "100"))
+    MESSAGE_FETCH_MAX_RETRIES: int = int(os.getenv("MESSAGE_FETCH_MAX_RETRIES", "5"))
     
     @classmethod
     def load_blacklist(cls):
         """Load blacklisted user IDs from environment variable."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         blacklist_str = os.getenv("BLACKLIST_IDS", "")
         if blacklist_str:
             # Split by comma and convert to integers

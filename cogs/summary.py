@@ -9,9 +9,16 @@ from typing import List
 
 class Summary(commands.Cog):
 
-    def __init__(self, bot):
+    def __init__(self, bot, ai_provider: str = "openai"):
+        """
+        Initialize the Summary cog.
+        
+        Args:
+            bot: The Discord bot instance
+            ai_provider: The AI provider to use ("openai" or "anthropic")
+        """
         self.bot = bot
-        self.ai_service = AIService()
+        self.ai_service = AIService(provider_name=ai_provider)
         self.memory_service = MemoryService()
 
 
@@ -27,8 +34,9 @@ class Summary(commands.Cog):
         # Store messages in memory
         stored_count = 0
         for message in messages:
-            message_data = format_discord_message(message)
-            success = await self.memory_service.store_message(message_data)
+            # messages is already a list of dicts from _fetch_messages
+            # No need to call format_discord_message again
+            success = await self.memory_service.store_message(message)
             if success:
                 stored_count += 1
 
@@ -154,8 +162,6 @@ class Summary(commands.Cog):
             
         except Exception as e:
             await ctx.send(f"❌ Error searching messages: {e}")
-
-
-
+    
 async def setup(bot):
     await bot.add_cog(Summary(bot))

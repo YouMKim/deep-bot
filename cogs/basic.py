@@ -6,6 +6,8 @@ Contains simple utility and fun commands.
 import discord
 from discord.ext import commands
 import asyncio
+from services.ai_service import AIService
+from services.user_ai_tracker import UserAITracker
 
 
 class Basic(commands.Cog):
@@ -13,6 +15,8 @@ class Basic(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        self.ai_service = AIService(provider_name="openai")
+        self.ai_tracker = UserAITracker()
 
     @commands.command(name="ping", help="Check bot latency")
     async def ping(self, ctx):
@@ -23,15 +27,36 @@ class Basic(commands.Cog):
     @commands.command(name="hello", help="Say hello to the bot")
     async def hello(self, ctx):
         """Say hello to the bot."""
+        user_name = ctx.author.display_name
+        
         try:
-            audio_file = discord.File(
-                "audio/Blitzcrank_Original_Taunt.ogg", filename=""
+            prompt = f"Say hello back to {user_name} in a casual way but make sure to make user feel bad for wasting electricity and resources for this simple greeting. Keep it short (1-2 sentences)."
+            
+            result = await self.ai_service.generate(
+                prompt=prompt,
+                max_tokens=100,
+                temperature=1.7,
             )
-            await ctx.send(f"👋 Hello {ctx.author.mention}!", file=audio_file)
-        except FileNotFoundError:
-            await ctx.send(f"👋 Hello {ctx.author.mention}! (Audio file not found)")
+            
+            embed = discord.Embed(
+                title="Hello",
+                description=result["content"],
+                color=discord.Color.blue()
+            )
+            
+            embed.set_footer(text=f"Cost: ${result['cost']:.6f} | Model: {result['model']}")
+            
+            await ctx.send(embed=embed)
+            
+            # Track AI usage (simple - just cost and tokens)
+            self.ai_tracker.log_ai_usage(
+                user_display_name=user_name,
+                cost=result['cost'],
+                tokens_total=result['tokens_total']
+            )
+            
         except Exception as e:
-            await ctx.send(f"👋 Hello {ctx.author.mention}! (Error loading audio: {e})")
+            await ctx.send(f"👋 Hello {ctx.author.mention}! (AI greeting failed: {e})")
 
     @commands.command(name="info", help="Get bot information")
     async def info(self, ctx):
@@ -79,7 +104,43 @@ class Basic(commands.Cog):
             embed.set_thumbnail(url=guild.icon.url)
 
         await ctx.send(embed=embed)
-
+    
+    @commands.command(name="mystats", help="View your AI usage stats and social credit")
+    async def mystats(self, ctx):
+        user_name = ctx.author.display_name
+        stats = self.ai_tracker.get_user_stats(user_name)
+        
+        if not stats:
+            await ctx.send("No Clanker usage recorded yet!")
+            return
+        
+        embed = discord.Embed(
+            title=f"📊 Clanker Stats for {user_name}",
+            color=discord.Color.green()
+        )
+        
+        # Social Credit
+        embed.add_field(
+            name="Social Credit Scores",
+            value=f"{stats['lifetime_credit']:.1f} points",
+            inline=True
+        )
+        
+        # Lifetime Spending
+        embed.add_field(
+            name="Money Wasted So Far",
+            value=f"${stats['lifetime_cost']:.6f}",
+            inline=True
+        )
+        
+        # Lifetime Tokens
+        embed.add_field(
+            name="Tokens Used So Far",
+            value=f"{stats['lifetime_tokens']:,}",
+            inline=True
+        )
+        
+        await ctx.send(embed=embed)
 
 async def setup(bot):
     """Load the cog."""

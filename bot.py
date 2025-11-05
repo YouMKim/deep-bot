@@ -31,10 +31,13 @@ class DeepBot(commands.Bot):
     def __init__(self):
         Config.validate()
 
+        # Convert owner_id to int if it exists
+        owner_id = int(Config.BOT_OWNER_ID) if Config.BOT_OWNER_ID else None
+
         super().__init__(
             command_prefix=Config.BOT_PREFIX,
             intents=Config.get_discord_intents(),
-            owner_id=Config.BOT_OWNER_ID,
+            owner_id=owner_id,
             strip_after_prefix=True,
         )
         self.debug_mode = Config.DEBUG_MODE

@@ -1,12 +1,7 @@
-import openai
-from config import Config
-
+from core import AIConfig, AIRequest, create_provider
 
 class AIService:
-
-    def __init__(self):
-        self.openai_client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
-
+    # Prompt templates for different summary styles
     PROMPT_STYLES = {
         "generic": {
             "system": "You are a helpful assistant that creates natural, flowing summaries of Discord conversations. Write in paragraph form, capturing the overall flow and context of the discussion.",
@@ -22,60 +17,64 @@ class AIService:
         },
     }
 
+    def __init__(self, provider_name: str = "openai"):
+        """
+        Initialize AI service with a specific provider.
+        
+        Args:
+            provider_name: Either "openai" or "anthropic"
+        """
+        config = AIConfig(model_name=provider_name)
+        self.provider = create_provider(config)
+        self.provider_name = provider_name
+
     async def summarize_with_style(self, text: str, style: str = "generic") -> dict:
+        """
+        Generate a summary of text in the specified style.
+        
+        Args:
+            text: The text to summarize
+            style: The summary style ("generic", "bullet_points", "headline")
+            
+        Returns:
+            Dictionary with summary results and metadata
+        """
         prompt_config = self.PROMPT_STYLES[style]
-        response = self.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": prompt_config["system"]},
-                {
-                    "role": "user",
-                    "content": prompt_config["user_template"].format(text=text),
-                },
-            ],
-            max_tokens=self._get_max_tokens_for_style(style),
+        full_prompt = self._build_prompt(prompt_config, text)
+        
+        request = AIRequest(
+            prompt=full_prompt,
+            max_tokens=self._get_max_tokens_for_style(style)
         )
-
-        usage = response.usage
-        cost = self.calculate_cost(
-            response.model, usage.prompt_tokens, usage.completion_tokens
-        )
+        response = await self.provider.complete(request)
+        
         return {
-            "summary": response.choices[0].message.content,
+            "summary": response.content,
             "style": style,
-            "tokens_prompt": usage.prompt_tokens,
-            "tokens_completion": usage.completion_tokens,
-            "tokens_total": usage.total_tokens,
+            "tokens_prompt": response.usage.prompt_tokens,
+            "tokens_completion": response.usage.completion_tokens,
+            "tokens_total": response.usage.total_tokens,
             "model": response.model,
-            "cost": cost,
+            "cost": response.cost.total_cost,
         }
-
-    def calculate_cost(
-        self, model: str, prompt_tokens: int, completion_tokens: int
-    ) -> float:
-        # cost per 1K tokens
-        cost_table = {
-            "gpt-4o-mini": {"prompt": 0.00015, "completion": 0.00060},
-            "gpt-4o-mini-2024-07-18": {"prompt": 0.00015, "completion": 0.00060},
-            "gpt-4o": {"prompt": 0.005, "completion": 0.015},
-            # add more models if needed
-        }
-
-        if model not in cost_table:
-            raise ValueError(f"Unknown model: {model}")
-
-        rates = cost_table[model]
-        total = (prompt_tokens / 1000) * rates["prompt"] + (
-            completion_tokens / 1000
-        ) * rates["completion"]
-        return total
+    
+    def _build_prompt(self, prompt_config: dict, text: str) -> str:
+        """
+        Build a complete prompt from template and text.
+        
+        Combines system message and user template into a single prompt.
+        """
+        system_msg = prompt_config["system"]
+        user_msg = prompt_config["user_template"].format(text=text)
+        
+        return f"{system_msg}\n\n{user_msg}"
 
     def _get_max_tokens_for_style(self, style: str) -> int:
         """Set appropriate max tokens for each style."""
         token_limits = {
-            "generic": 300,  # 2-4 sentences
-            "bullet_points": 400,  # 3-7 bullet points
-            "headline": 100,  # 1-2 sentences
+            "generic": 300,  
+            "bullet_points": 400, 
+            "headline": 100,  
         }
         return token_limits.get(style, 300)
 
@@ -84,3 +83,33 @@ class AIService:
         for style in self.PROMPT_STYLES.keys():
             results[style] = await self.summarize_with_style(text, style)
         return results
+    
+    async def generate(self, prompt: str, max_tokens: int = 200, temperature: float = 0.7) -> dict:
+        """
+        Generate a response for any prompt (generic AI completion).
+        
+        Args:
+            prompt: The prompt text to send to the AI
+            max_tokens: Maximum tokens in the response (default: 200)
+            temperature: Model temperature 0-2 (default: 0.7)
+            
+        Returns:
+            Dictionary with response results and metadata
+        """
+        request = AIRequest(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+        
+        response = await self.provider.complete(request)
+        
+        return {
+            "content": response.content,
+            "tokens_prompt": response.usage.prompt_tokens,
+            "tokens_completion": response.usage.completion_tokens,
+            "tokens_total": response.usage.total_tokens,
+            "model": response.model,
+            "cost": response.cost.total_cost,
+            "latency_ms": response.latency_ms,
+        }
