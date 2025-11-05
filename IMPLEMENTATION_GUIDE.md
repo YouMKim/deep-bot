@@ -22,10 +22,16 @@ This guide walks you through implementing each phase of the Discord Chunking Sys
 13. [Phase 12: User Emulation Mode](./PHASE_12.md) 🆕 NEW
 14. [Phase 13: Debate & Rhetoric Analyzer](./PHASE_13.md) 🆕 NEW
 
+### Advanced RAG Techniques (Phases 14-17) 🔥 NEW
+15. [Phase 14: Hybrid Search (Vector + Keyword)](./PHASE_14.md) 🔥 NEW
+16. [Phase 15: Reranking & Query Optimization](./PHASE_15.md) 🔥 NEW
+17. [Phase 16: Advanced RAG Techniques (HyDE, Self-RAG, RAG Fusion)](./PHASE_16.md) 🔥 NEW
+18. [Phase 17: RAG Strategy Comparison Dashboard](./PHASE_17.md) 🔥 NEW
+
 ### Deployment & Production
-15. [Deployment Guide - Docker, VPS, Cloud](./DEPLOYMENT_GUIDE.md) 🆕 NEW
-16. [Quick Reference Checklists](#quick-reference)
-17. [Common Pitfalls & Debugging](#common-pitfalls)
+19. [Deployment Guide - Docker, VPS, Cloud](./DEPLOYMENT_GUIDE.md) 🆕 NEW
+20. [Quick Reference Checklists](#quick-reference)
+21. [Common Pitfalls & Debugging](#common-pitfalls)
 
 ---
 
@@ -81,6 +87,27 @@ This guide walks you through implementing each phase of the Discord Chunking Sys
 - **Goal:** Production-ready, scalable system
 
 See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete deployment instructions.
+
+### Milestone 7: Advanced RAG Techniques 🔥 NEW
+- 🔥 Phase 14: Hybrid Search (Vector + Keyword)
+  - BM25 keyword search
+  - Reciprocal Rank Fusion (RRF)
+  - Compare vector vs keyword vs hybrid
+- 🔥 Phase 15: Reranking & Query Optimization
+  - Cross-encoder reranking
+  - Query expansion techniques
+  - Performance vs accuracy trade-offs
+- 🔥 Phase 16: Advanced RAG Methods
+  - HyDE (Hypothetical Document Embeddings)
+  - Self-RAG (Self-Reflective Retrieval)
+  - RAG Fusion (Multi-Query Synthesis)
+  - Iterative retrieval
+- 🔥 Phase 17: RAG Strategy Comparison Dashboard
+  - Unified RAG service
+  - Strategy recommendation engine
+  - A/B testing framework
+  - Interactive comparison tools
+- **Goal:** Master state-of-the-art RAG techniques and understand when to use each
 
 ---
 
