@@ -402,31 +402,50 @@ if checkpoint:
 
 **Checkpoint/Resume Pattern:**
 
-**Important: Discord API Behavior**
+**Important: Understanding Discord API Behavior**
 
-Discord's `channel.history()` API **defaults to newest-to-oldest** (reverse chronological order). 
+Discord's `channel.history()` API **defaults to newest-to-oldest** (reverse chronological order).
 You **must** use `oldest_first=True` to fetch chronologically from oldest to newest.
 
-**Understanding Checkpoint Fields:**
+**Understanding Checkpoint Fields (CRITICAL CONCEPT):**
 
-When fetching with `oldest_first=True`:
-- **`last_message_id`**: The newest message we've fetched (required for resume)
-- **`last_fetch_timestamp`**: Timestamp of the newest message we've fetched (required for resume)
-- **`oldest_message_id`**: The oldest message we've fetched (optional metadata, for stats/reporting)
-- **`total_messages`**: Total count of messages stored (for reporting)
+⚠️ **Don't confuse "last" (position in fetch) with "newest/oldest" (position in time)!**
 
-**Why we need `last_message_id` (not `oldest_message_id`) for resume:**
+When fetching with `oldest_first=True`, we process messages chronologically from past to present:
 
-Example timeline:
-- Messages: 1 year ago → 3 months ago → 1 month ago → now
-- We fetch oldest-first: 1 year ago → 3 months ago (stopped here)
-- Checkpoint stores:
-  - `oldest_message_id` = 1 year ago (first message fetched) - **metadata only**
-  - `last_message_id` = 3 months ago (last message fetched) - **needed for resume**
-- To resume: We continue AFTER 3 months ago → 1 month ago → now
-- We use `after=last_message_id` (3 months ago), NOT `oldest_message_id`
+| Field | Time Position | Fetch Position | Purpose |
+|-------|---------------|----------------|---------|
+| `oldest_message_id` | Earliest in time | First fetched | Metadata only (stats/reporting) |
+| `last_message_id` | Latest in time | Last fetched | **Required for resume** |
+| `last_fetch_timestamp` | Latest in time | Last fetched | **Required for resume** |
+| `total_messages` | N/A | N/A | Stats/reporting |
 
-The checkpoint logic works as follows:
+**Visual Timeline Example:**
+
+```
+TIME →→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→
+        [1 year ago]  [3 months ago]  [1 month ago]  [now]
+              ↑              ↑
+        oldest_msg    last_msg       <-- We stopped here
+        (first        (last
+         fetched)      fetched)
+
+To resume: Fetch AFTER last_msg (3 months ago) → [1 month ago] → [now]
+```
+
+**Why we use `last_message_id` (NOT `oldest_message_id`) for resume:**
+
+With `oldest_first=True`:
+1. We fetch chronologically: [1 year ago] → [3 months ago] (stopped)
+2. Checkpoint stores:
+   - `oldest_message_id` = 1 year ago ← **Just metadata** (shows our starting point)
+   - `last_message_id` = 3 months ago ← **Resume point** (where we stopped)
+3. To resume: Use `after=last_message_id` (3 months ago)
+4. Continue fetching: [3 months ago] → [1 month ago] → [now]
+
+**Key Insight:** `last_message_id` is the **most recent message in time** we've already fetched, so we resume AFTER it to get newer messages.
+
+**The Checkpoint Logic:**
 
 ```python
 # Checkpoint check happens before fetching
@@ -434,10 +453,28 @@ checkpoint = self.message_storage.get_checkpoint(channel_id)
 
 if checkpoint and before is None and after is None:
     # Auto-resume from checkpoint
-    # Uses last_message_id (newest we've fetched) to continue where we left off
+    # Explanation:
+    # - last_message_id = the newest message we've already fetched
+    # - We want to fetch messages AFTER this (i.e., newer messages)
+    # - oldest_first=True ensures we continue chronologically forward
     after_message = await channel.fetch_message(int(checkpoint['last_message_id']))
     after = after_message  # Continue fetching AFTER this message
 ```
+
+**Terminology Clarification:**
+
+| Term | Meaning |
+|------|---------|
+| "oldest" | Earliest in **chronological time** (furthest in the past) |
+| "newest" / "latest" | Latest in **chronological time** (most recent) |
+| "first" | Position in **fetch order** (what we fetched first) |
+| "last" | Position in **fetch order** (what we fetched last) |
+
+When using `oldest_first=True`:
+- **First fetched** = **Oldest in time** ✓
+- **Last fetched** = **Newest in time** ✓
+
+This alignment is why we name the field `last_message_id` (it's both the last fetched AND the newest in time).
 
 **Important: Understanding the Condition**
 

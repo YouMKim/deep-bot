@@ -233,33 +233,291 @@ def _create_chunk(self, messages: List[Dict], strategy: str) -> Chunk:
     return Chunk(content, message_ids, metadata)
 ```
 
-#### Step 4.5: Main Chunking Method
+#### Step 4.5: Add Token Counting Utility
+
+```python
+import tiktoken
+
+def count_tokens(self, text: str, model: str = "cl100k_base") -> int:
+    """
+    Count tokens in text using tiktoken.
+
+    Learning: Different models have different tokenizers.
+    - cl100k_base: GPT-4, GPT-3.5-turbo
+    - p50k_base: GPT-3 (davinci, curie, etc.)
+
+    Why this matters:
+    - Embedding models have max token limits (384-8192 tokens)
+    - LLMs have context limits (4k-128k tokens)
+    - Discord messages can be 2000 chars = ~500 tokens
+    """
+    try:
+        encoding = tiktoken.get_encoding(model)
+        return len(encoding.encode(text))
+    except Exception:
+        # Fallback: rough estimate (4 chars per token)
+        return len(text) // 4
+```
+
+#### Step 4.6: Implement Sliding Window Chunking
+
+```python
+def chunk_sliding_window(
+    self,
+    messages: List[Dict],
+    window_size: int = 10,
+    overlap: int = 2
+) -> List[Chunk]:
+    """
+    Create overlapping chunks with sliding window.
+
+    Learning: Overlap prevents losing context at chunk boundaries.
+    Critical for RAG to find information that spans multiple messages.
+
+    Example (window=3, overlap=1):
+        Chunk 1: [msg1, msg2, msg3]
+        Chunk 2: [msg3, msg4, msg5]  # msg3 overlaps
+        Chunk 3: [msg5, msg6, msg7]  # msg5 overlaps
+
+    Why overlap matters:
+    - Conversations often span chunk boundaries
+    - Overlap ensures queries can match across boundaries
+    - Slight redundancy improves retrieval quality
+
+    Args:
+        messages: List of messages to chunk
+        window_size: Number of messages per chunk
+        overlap: Number of messages to overlap between chunks
+
+    Returns:
+        List of chunks with overlapping messages
+    """
+    if not messages:
+        return []
+
+    if overlap >= window_size:
+        self.logger.warning(
+            f"Overlap ({overlap}) >= window_size ({window_size}), "
+            f"setting overlap to {window_size - 1}"
+        )
+        overlap = max(1, window_size - 1)
+
+    sorted_messages = sorted(messages, key=lambda m: m.get('timestamp', ''))
+    chunks = []
+
+    start = 0
+    while start < len(sorted_messages):
+        end = min(start + window_size, len(sorted_messages))
+        window_messages = sorted_messages[start:end]
+
+        if window_messages:
+            chunks.append(self._create_chunk(window_messages, "sliding_window"))
+
+        # Move forward by (window_size - overlap)
+        start += window_size - overlap
+
+        # Prevent infinite loop if we're at the end
+        if end == len(sorted_messages):
+            break
+
+    return chunks
+```
+
+#### Step 4.7: Implement Token-Aware Chunking
+
+```python
+def chunk_by_tokens(
+    self,
+    messages: List[Dict],
+    max_tokens: int = 512,
+    min_chunk_size: int = 3
+) -> List[Chunk]:
+    """
+    Create chunks respecting token limits.
+
+    Learning: Embedding models have max input sizes:
+    - all-MiniLM-L6-v2: 512 tokens
+    - all-mpnet-base-v2: 512 tokens
+    - OpenAI ada-002: 8192 tokens
+    - text-embedding-3-small: 8192 tokens
+
+    Why this matters:
+    - Exceeding token limits causes errors or truncation
+    - Different strategies produce different chunk sizes
+    - Need to validate chunks before embedding
+
+    Args:
+        messages: List of messages to chunk
+        max_tokens: Maximum tokens per chunk
+        min_chunk_size: Minimum messages per chunk (avoid tiny chunks)
+
+    Returns:
+        List of chunks within token limits
+    """
+    if not messages:
+        return []
+
+    sorted_messages = sorted(messages, key=lambda m: m.get('timestamp', ''))
+    chunks = []
+    current_chunk = []
+    current_tokens = 0
+
+    for message in sorted_messages:
+        # Format message to see actual token count
+        author = message.get('author_display_name') or message.get('author', 'Unknown')
+        timestamp = message.get('timestamp', '')[:10]
+        content = message.get('content', '').strip()
+
+        if not content:
+            continue
+
+        formatted = f"{timestamp} - {author}: {content}\n"
+        msg_tokens = self.count_tokens(formatted)
+
+        # If single message exceeds limit, split it
+        if msg_tokens > max_tokens:
+            # Save current chunk if it exists
+            if current_chunk and len(current_chunk) >= min_chunk_size:
+                chunks.append(self._create_chunk(current_chunk, "token_aware"))
+                current_chunk = []
+                current_tokens = 0
+
+            # Handle oversized message (truncate or skip)
+            self.logger.warning(
+                f"Message {message.get('id')} exceeds {max_tokens} tokens "
+                f"({msg_tokens} tokens). Skipping."
+            )
+            continue
+
+        # Check if adding this message would exceed limit
+        if current_tokens + msg_tokens > max_tokens:
+            # Save current chunk if it meets minimum size
+            if current_chunk and len(current_chunk) >= min_chunk_size:
+                chunks.append(self._create_chunk(current_chunk, "token_aware"))
+            elif current_chunk:
+                self.logger.warning(
+                    f"Chunk too small ({len(current_chunk)} messages), "
+                    f"but at token limit. Creating anyway."
+                )
+                chunks.append(self._create_chunk(current_chunk, "token_aware"))
+
+            # Start new chunk
+            current_chunk = [message]
+            current_tokens = msg_tokens
+        else:
+            # Add message to current chunk
+            current_chunk.append(message)
+            current_tokens += msg_tokens
+
+    # Don't forget last chunk
+    if current_chunk and len(current_chunk) >= min_chunk_size:
+        chunks.append(self._create_chunk(current_chunk, "token_aware"))
+    elif current_chunk:
+        self.logger.warning(
+            f"Last chunk too small ({len(current_chunk)} messages). "
+            f"Creating anyway to avoid data loss."
+        )
+        chunks.append(self._create_chunk(current_chunk, "token_aware"))
+
+    return chunks
+```
+
+#### Step 4.8: Update _create_chunk with Validation
+
+```python
+def _create_chunk(self, messages: List[Dict], strategy: str) -> Chunk:
+    """Helper to create chunk with metadata and validation"""
+    if not messages:
+        raise ValueError("Cannot create chunk from empty messages")
+
+    # Format content
+    content_parts = []
+    for msg in messages:
+        author = msg.get('author_display_name') or msg.get('author', 'Unknown')
+        timestamp = msg.get('timestamp', '')[:10]  # Date only
+        content = msg.get('content', '').strip()
+        if content:
+            content_parts.append(f"{timestamp} - {author}: {content}")
+
+    content = "\n".join(content_parts)
+
+    # Validate token count
+    token_count = self.count_tokens(content)
+
+    # Collect metadata
+    message_ids = [str(msg.get('id', '')) for msg in messages if msg.get('id')]
+    metadata = {
+        "chunk_strategy": strategy,
+        "channel_id": messages[0].get('channel_id', ''),
+        "message_count": len(messages),
+        "token_count": token_count,  # ⭐ NEW: Track token count
+        "first_message_id": message_ids[0] if message_ids else '',
+        "last_message_id": message_ids[-1] if message_ids else '',
+        "first_timestamp": messages[0].get('timestamp', ''),
+        "last_timestamp": messages[-1].get('timestamp', ''),
+    }
+
+    # Log warnings for problematic chunks
+    if token_count > 512:
+        self.logger.warning(
+            f"Chunk exceeds 512 tokens ({token_count}). "
+            f"May fail with some embedding models."
+        )
+
+    if len(messages) == 1:
+        self.logger.debug(f"Single-message chunk created (strategy: {strategy})")
+
+    return Chunk(content, message_ids, metadata)
+```
+
+#### Step 4.9: Main Chunking Method
 
 ```python
 def chunk_messages(
-    self, 
-    messages: List[Dict], 
+    self,
+    messages: List[Dict],
     strategies: List[str] = None
 ) -> Dict[str, List[Chunk]]:
     """
     Generate chunks using specified strategies.
-    
+
     Learning: Returns all strategies at once for comparison.
+
+    Available strategies:
+    - temporal: Time-based windows
+    - conversation: Gap detection
+    - single: One message per chunk
+    - sliding_window: Overlapping windows (NEW)
+    - token_aware: Respect token limits (NEW)
     """
     if strategies is None:
-        strategies = ["temporal", "conversation", "single"]
-    
+        strategies = ["temporal", "conversation", "sliding_window", "token_aware"]
+
     results = {}
-    
+
     if "temporal" in strategies:
         results["temporal"] = self.chunk_temporal(messages)
-    
+
     if "conversation" in strategies:
         results["conversation"] = self.chunk_conversation(messages)
-    
+
     if "single" in strategies:
         results["single"] = self.chunk_single(messages)
-    
+
+    if "sliding_window" in strategies:
+        results["sliding_window"] = self.chunk_sliding_window(
+            messages,
+            window_size=Config.CHUNKING_WINDOW_SIZE,
+            overlap=Config.CHUNKING_OVERLAP
+        )
+
+    if "token_aware" in strategies:
+        results["token_aware"] = self.chunk_by_tokens(
+            messages,
+            max_tokens=Config.CHUNKING_MAX_TOKENS,
+            min_chunk_size=Config.CHUNKING_MIN_CHUNK_SIZE
+        )
+
     return results
 ```
 
@@ -270,6 +528,10 @@ def chunk_messages(
 3. **Sorting**: Always sort by timestamp before chunking
 4. **Boundary detection**: Time gaps must account for timezone
 5. **Metadata**: Include all info needed for filtering later
+6. **Token counting**: Don't forget to install tiktoken (`pip install tiktoken`)
+7. **Overlap validation**: Overlap must be less than window_size
+8. **Token limits**: Different embedding models have different max tokens
+9. **Tiny chunks**: Set minimum chunk size to avoid single-message chunks (unless intended)
 
 ### Debugging Tips - Phase 4
 
@@ -277,9 +539,28 @@ def chunk_messages(
 - **Check timestamps**: Verify they're parsed correctly
 - **Test boundaries**: Create test data with known gaps
 - **Compare strategies**: Visualize chunk boundaries
+- **Verify token counts**: Log token counts for each chunk
+- **Test overlap**: Verify messages appear in multiple chunks with sliding_window
+- **Monitor warnings**: Watch for oversized messages or small chunks
 
 ### Performance Considerations - Phase 4
 
 - **Sorting**: O(n log n) complexity, but necessary
 - **Chunk count**: More chunks = more embeddings = more storage
 - **Content length**: Keep chunks under token limits
+- **Token counting**: tiktoken is fast but still adds overhead
+- **Strategy selection**:
+  - sliding_window: More chunks (overlap), better retrieval
+  - token_aware: Fewer, optimally-sized chunks
+  - temporal/conversation: Variable size, depends on data
+
+### Recommended Strategy Combinations
+
+For most use cases:
+1. **Start with**: `token_aware` (respects limits, good baseline)
+2. **Add**: `sliding_window` (better retrieval with overlap)
+3. **Compare**: Both strategies to see which performs better
+4. **Optional**: `conversation` if natural breaks are important
+
+For experimentation:
+- Try all strategies and compare retrieval quality (Phase 6.5)

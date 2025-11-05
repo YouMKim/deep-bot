@@ -6,14 +6,51 @@ This guide walks you through implementing each phase of the Discord Chunking Sys
 1. [Phase 1: Foundation - Message Storage Abstraction](#phase-1)
 2. [Phase 2: Rate Limiting & API Design](#phase-2)
 3. [Phase 3: Embedding Service Abstraction](#phase-3)
-4. [Phase 4: Chunking Strategies](#phase-4)
+4. [Phase 4: Chunking Strategies](#phase-4) ⭐ UPDATED - Token limits & sliding window
 5. [Phase 5: Vector Store Abstraction](#phase-5)
 6. [Phase 6: Multi-Strategy Chunk Storage](#phase-6)
-7. [Phase 7: Bot Commands Integration](#phase-7)
-8. [Phase 8: Summary Enhancement](#phase-8)
-9. [Phase 9: Configuration & Polish](#phase-9)
-10. [Quick Reference Checklists](#quick-reference)
-11. [Common Pitfalls & Debugging](#common-pitfalls)
+7. [Phase 6.5: Strategy Evaluation & Comparison](#phase-6-5) 🆕 NEW
+8. [Phase 7: Bot Commands Integration](#phase-7)
+9. [Phase 8: Summary Enhancement](#phase-8)
+10. [Phase 9: Configuration & Polish](#phase-9) ⭐ UPDATED - RAG config
+11. [Phase 10: RAG Query Pipeline](#phase-10) 🆕 NEW
+12. [Quick Reference Checklists](#quick-reference)
+13. [Common Pitfalls & Debugging](#common-pitfalls)
+
+---
+
+## 🎯 Recommended Learning Path
+
+**For building a complete RAG system:**
+
+### Milestone 1: Data Collection (Phases 1-2)
+- ✅ Phase 1: SQLite storage with checkpoints
+- ✅ Phase 2: Rate-limited Discord API loading
+- **Goal:** Store 10,000+ messages from your Discord server
+
+### Milestone 2: Embedding & Chunking (Phases 3-4)
+- ✅ Phase 3: Embedding provider abstraction (local + cloud)
+- ✅ Phase 4: Multiple chunking strategies (temporal, sliding window, token-aware)
+- **Goal:** Create multiple chunking approaches for comparison
+
+### Milestone 3: Vector Storage & Evaluation (Phases 5-6.5)
+- ✅ Phase 5: Vector store abstraction (ChromaDB)
+- ✅ Phase 6: Multi-strategy chunk storage
+- 🆕 Phase 6.5: Evaluate and compare strategies
+- **Goal:** Identify the best chunking strategy for your data
+
+### Milestone 4: RAG Query Pipeline (Phases 7-10)
+- ✅ Phase 7: Bot commands integration
+- ✅ Phase 8: Summary enhancement
+- ✅ Phase 9: Configuration management
+- 🆕 Phase 10: Complete RAG query pipeline
+- **Goal:** Working end-to-end RAG chatbot
+
+### Milestone 5: Optimization (Future)
+- Phase 11: Hybrid search (vector + keyword)
+- Phase 12: Reranking and query optimization
+- Phase 13: Production deployment
+- **Goal:** Production-ready, optimized system
 
 ---
 

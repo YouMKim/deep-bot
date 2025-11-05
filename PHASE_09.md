@@ -20,15 +20,23 @@ Update `config.py`:
 ```python
 # Embedding Configuration
 EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "sentence-transformers")
+EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
+EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "32"))
+EMBEDDING_MAX_TOKENS: int = int(os.getenv("EMBEDDING_MAX_TOKENS", "512"))
 
 # Vector Store Configuration
 VECTOR_STORE_PROVIDER: str = os.getenv("VECTOR_STORE_PROVIDER", "chroma")
+CHROMA_PERSIST_DIR: str = os.getenv("CHROMA_PERSIST_DIR", "data/chroma")
 PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
 PINECONE_ENVIRONMENT: Optional[str] = os.getenv("PINECONE_ENVIRONMENT")
 
 # Chunking Configuration
 CHUNKING_TEMPORAL_WINDOW: int = int(os.getenv("CHUNKING_TEMPORAL_WINDOW", "300"))
 CHUNKING_CONVERSATION_GAP: int = int(os.getenv("CHUNKING_CONVERSATION_GAP", "1800"))
+CHUNKING_WINDOW_SIZE: int = int(os.getenv("CHUNKING_WINDOW_SIZE", "10"))
+CHUNKING_OVERLAP: int = int(os.getenv("CHUNKING_OVERLAP", "2"))
+CHUNKING_MAX_TOKENS: int = int(os.getenv("CHUNKING_MAX_TOKENS", "512"))
+CHUNKING_MIN_CHUNK_SIZE: int = int(os.getenv("CHUNKING_MIN_CHUNK_SIZE", "3"))
 
 # Rate Limiting
 MESSAGE_FETCH_DELAY: float = float(os.getenv("MESSAGE_FETCH_DELAY", "1.0"))
@@ -38,6 +46,14 @@ MESSAGE_FETCH_MAX_RETRIES: int = int(os.getenv("MESSAGE_FETCH_MAX_RETRIES", "5")
 
 # Storage Configuration
 RAW_MESSAGES_DIR: str = os.getenv("RAW_MESSAGES_DIR", "data/raw_messages")
+
+# RAG Configuration (NEW!)
+RAG_TOP_K: int = int(os.getenv("RAG_TOP_K", "5"))
+RAG_MIN_SIMILARITY: float = float(os.getenv("RAG_MIN_SIMILARITY", "0.7"))
+RAG_RERANK: bool = os.getenv("RAG_RERANK", "False").lower() == "true"
+RAG_DEFAULT_STRATEGY: str = os.getenv("RAG_DEFAULT_STRATEGY", "token_aware")
+RAG_INCLUDE_SOURCES: bool = os.getenv("RAG_INCLUDE_SOURCES", "True").lower() == "true"
+RAG_MAX_CONTEXT_TOKENS: int = int(os.getenv("RAG_MAX_CONTEXT_TOKENS", "2000"))
 
 # Features
 SUMMARY_USE_STORED_MESSAGES: bool = os.getenv(
@@ -49,23 +65,42 @@ def validate(cls) -> bool:
     """Validate configuration"""
     required = ["DISCORD_TOKEN"]
     missing = [var for var in required if not getattr(cls, var)]
-    
+
     if missing:
         print(f"❌ Missing required config: {', '.join(missing)}")
         return False
-    
+
     # Validate rate limits
     if cls.MESSAGE_FETCH_DELAY < 0.1:
         print("⚠️ Warning: Rate limit delay too low, may get rate limited")
-    
+
     # Validate chunking
     if cls.CHUNKING_TEMPORAL_WINDOW < 60:
         print("⚠️ Warning: Temporal window too small (< 60s)")
-    
+
+    if cls.CHUNKING_OVERLAP >= cls.CHUNKING_WINDOW_SIZE:
+        print("⚠️ Warning: Chunking overlap must be less than window size")
+
+    if cls.CHUNKING_MAX_TOKENS > cls.EMBEDDING_MAX_TOKENS:
+        print("⚠️ Warning: Chunk max tokens exceeds embedding max tokens")
+
+    if cls.CHUNKING_MIN_CHUNK_SIZE < 1:
+        print("⚠️ Warning: Minimum chunk size must be at least 1")
+
     # Validate embedding provider
     if cls.EMBEDDING_PROVIDER == "openai" and not cls.OPENAI_API_KEY:
         print("⚠️ Warning: OpenAI embedding provider selected but no API key")
-    
+
+    # Validate RAG settings
+    if cls.RAG_TOP_K < 1:
+        print("⚠️ Warning: RAG_TOP_K must be at least 1")
+
+    if cls.RAG_MIN_SIMILARITY < 0.0 or cls.RAG_MIN_SIMILARITY > 1.0:
+        print("⚠️ Warning: RAG_MIN_SIMILARITY must be between 0.0 and 1.0")
+
+    if cls.RAG_DEFAULT_STRATEGY not in ["temporal", "conversation", "sliding_window", "token_aware", "single"]:
+        print(f"⚠️ Warning: Unknown RAG_DEFAULT_STRATEGY: {cls.RAG_DEFAULT_STRATEGY}")
+
     return True
 ```
 
