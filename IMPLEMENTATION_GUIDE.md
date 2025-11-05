@@ -3,19 +3,29 @@
 This guide walks you through implementing each phase of the Discord Chunking System, with a focus on learning system design principles, code design patterns, and RAG architecture.
 
 ## Table of Contents
-1. [Phase 1: Foundation - Message Storage Abstraction](#phase-1)
-2. [Phase 2: Rate Limiting & API Design](#phase-2)
-3. [Phase 3: Embedding Service Abstraction](#phase-3)
-4. [Phase 4: Chunking Strategies](#phase-4) ⭐ UPDATED - Token limits & sliding window
-5. [Phase 5: Vector Store Abstraction](#phase-5)
-6. [Phase 6: Multi-Strategy Chunk Storage](#phase-6)
-7. [Phase 6.5: Strategy Evaluation & Comparison](#phase-6-5) 🆕 NEW
-8. [Phase 7: Bot Commands Integration](#phase-7)
-9. [Phase 8: Summary Enhancement](#phase-8)
-10. [Phase 9: Configuration & Polish](#phase-9) ⭐ UPDATED - RAG config
-11. [Phase 10: RAG Query Pipeline](#phase-10) 🆕 NEW
-12. [Quick Reference Checklists](#quick-reference)
-13. [Common Pitfalls & Debugging](#common-pitfalls)
+
+### Core RAG Implementation (Phases 1-10)
+1. [Phase 1: Foundation - Message Storage Abstraction](./PHASE_01.md)
+2. [Phase 2: Rate Limiting & API Design](./PHASE_02.md) ⭐ UPDATED
+3. [Phase 3: Embedding Service Abstraction](./PHASE_03.md)
+4. [Phase 4: Chunking Strategies](./PHASE_04.md) ⭐ UPDATED - Token limits & sliding window
+5. [Phase 5: Vector Store Abstraction](./PHASE_05.md)
+6. [Phase 6: Multi-Strategy Chunk Storage](./PHASE_06.md)
+7. [Phase 6.5: Strategy Evaluation & Comparison](./PHASE_06_5.md) 🆕 NEW
+8. [Phase 7: Bot Commands Integration](./PHASE_07.md)
+9. [Phase 8: Summary Enhancement](./PHASE_08.md)
+10. [Phase 9: Configuration & Polish](./PHASE_09.md) ⭐ UPDATED - RAG config
+11. [Phase 10: RAG Query Pipeline](./PHASE_10.md) 🆕 NEW
+
+### Advanced Chatbot Features (Phases 11-13)
+12. [Phase 11: Conversational Chatbot with Memory](./PHASE_11.md) 🆕 NEW
+13. [Phase 12: User Emulation Mode](./PHASE_12.md) 🆕 NEW
+14. [Phase 13: Debate & Rhetoric Analyzer](./PHASE_13.md) 🆕 NEW
+
+### Deployment & Production
+15. [Deployment Guide - Docker, VPS, Cloud](./DEPLOYMENT_GUIDE.md) 🆕 NEW
+16. [Quick Reference Checklists](#quick-reference)
+17. [Common Pitfalls & Debugging](#common-pitfalls)
 
 ---
 
@@ -46,11 +56,31 @@ This guide walks you through implementing each phase of the Discord Chunking Sys
 - 🆕 Phase 10: Complete RAG query pipeline
 - **Goal:** Working end-to-end RAG chatbot
 
-### Milestone 5: Optimization (Future)
-- Phase 11: Hybrid search (vector + keyword)
-- Phase 12: Reranking and query optimization
-- Phase 13: Production deployment
-- **Goal:** Production-ready, optimized system
+### Milestone 5: Advanced Chatbot Features (Phases 11-13) 🆕
+- 🆕 Phase 11: Conversational chatbot with memory
+  - Multi-turn conversations
+  - Context-aware responses
+  - Combines RAG + conversation history
+- 🆕 Phase 12: User emulation mode
+  - Mimic user speech patterns
+  - Personality modeling
+  - Style transfer
+- 🆕 Phase 13: Debate & rhetoric analyzer
+  - Argument structure analysis
+  - Logical fallacy detection
+  - Fact-checking with RAG
+  - Constructive feedback generation
+- **Goal:** Fully-featured conversational AI chatbot
+
+### Milestone 6: Production Deployment 🚀
+- Deploy with Docker & Docker Compose
+- Choose deployment platform (Railway, VPS, AWS, etc.)
+- Set up monitoring & logging
+- Implement backups
+- Configure security
+- **Goal:** Production-ready, scalable system
+
+See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete deployment instructions.
 
 ---
 
