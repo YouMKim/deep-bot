@@ -35,11 +35,39 @@ class Config:
     # Message Loading Settings
     BLACKLIST_IDS: list = []
 
-    #Discord Message rate limits
+    # Discord Message rate limits
     MESSAGE_FETCH_DELAY: float = float(os.getenv("MESSAGE_FETCH_DELAY", "1.0"))
     MESSAGE_FETCH_BATCH_SIZE: int = int(os.getenv("MESSAGE_FETCH_BATCH_SIZE", "100"))
     MESSAGE_FETCH_PROGRESS_INTERVAL: int = int(os.getenv("MESSAGE_FETCH_PROGRESS_INTERVAL", "100"))
     MESSAGE_FETCH_MAX_RETRIES: int = int(os.getenv("MESSAGE_FETCH_MAX_RETRIES", "5"))
+
+    # Embedding Configuration
+    EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "sentence-transformers")
+    EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
+    EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "32"))
+    EMBEDDING_MAX_TOKENS: int = int(os.getenv("EMBEDDING_MAX_TOKENS", "512"))
+
+    # Vector Store Configuration
+    VECTOR_STORE_PROVIDER: str = os.getenv("VECTOR_STORE_PROVIDER", "chroma")
+    CHROMA_PERSIST_DIR: str = os.getenv("CHROMA_PERSIST_DIR", "data/chroma")
+    PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
+    PINECONE_ENVIRONMENT: Optional[str] = os.getenv("PINECONE_ENVIRONMENT")
+
+    # Chunking Configuration
+    CHUNKING_TEMPORAL_WINDOW: int = int(os.getenv("CHUNKING_TEMPORAL_WINDOW", "300"))
+    CHUNKING_CONVERSATION_GAP: int = int(os.getenv("CHUNKING_CONVERSATION_GAP", "1800"))
+    CHUNKING_WINDOW_SIZE: int = int(os.getenv("CHUNKING_WINDOW_SIZE", "10"))
+    CHUNKING_OVERLAP: int = int(os.getenv("CHUNKING_OVERLAP", "2"))
+    CHUNKING_MAX_TOKENS: int = int(os.getenv("CHUNKING_MAX_TOKENS", "512"))
+    CHUNKING_MIN_CHUNK_SIZE: int = int(os.getenv("CHUNKING_MIN_CHUNK_SIZE", "3"))
+
+    # RAG Configuration
+    RAG_TOP_K: int = int(os.getenv("RAG_TOP_K", "5"))
+    RAG_MIN_SIMILARITY: float = float(os.getenv("RAG_MIN_SIMILARITY", "0.7"))
+    RAG_RERANK: bool = os.getenv("RAG_RERANK", "False").lower() == "true"
+    RAG_DEFAULT_STRATEGY: str = os.getenv("RAG_DEFAULT_STRATEGY", "token_aware")
+    RAG_INCLUDE_SOURCES: bool = os.getenv("RAG_INCLUDE_SOURCES", "True").lower() == "true"
+    RAG_MAX_CONTEXT_TOKENS: int = int(os.getenv("RAG_MAX_CONTEXT_TOKENS", "2000"))
     
     @classmethod
     def load_blacklist(cls):
