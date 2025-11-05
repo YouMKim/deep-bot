@@ -1,0 +1,17 @@
+# Minimal requirements for Quick Start (Phase 0-2)
+# For full requirements, see requirements.txt
+
+# Discord
+discord.py==2.3.2
+
+# Environment variables
+python-dotenv==1.0.0
+
+# OpenAI (optional - only if using OpenAI API)
+openai==1.12.0
+
+# Token counting
+tiktoken==0.6.0
+
+# Async support
+aiohttp==3.9.3
