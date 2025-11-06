@@ -48,18 +48,18 @@ But which one should you use? **It depends!** Different queries benefit from dif
 
 ### Architecture
 
-Create `services/unified_rag_service.py`:
+Create `rag/unified_service.py`:
 
 ```python
 from typing import Dict, List, Optional, Literal
-from services.vector_db_service import VectorDBService
-from services.bm25_retriever import BM25Retriever
-from services.hybrid_search_service import HybridSearchService
-from services.query_optimizer import QueryOptimizer
-from services.reranking_service import RerankingService
-from services.hyde_service import HyDEService
-from services.self_rag_service import SelfRAGService
-from services.rag_fusion_service import RAGFusionService
+from retrieval.vector import VectorDBService
+from retrieval.keyword import BM25Retriever
+from retrieval.hybrid import HybridSearchService
+from retrieval.advanced.query_optimizer import QueryOptimizer
+from retrieval.reranking import RerankingService
+from retrieval.advanced.hyde import HyDEService
+from retrieval.advanced.self_rag import SelfRAGService
+from retrieval.advanced.fusion import RAGFusionService
 import time
 import logging
 
@@ -172,7 +172,7 @@ class UnifiedRAGService:
     # Strategy implementations
     async def _vector_search(self, query: str, top_k: int) -> Dict:
         """Basic vector search."""
-        from services.embedding_service import EmbeddingService
+        from embedding import EmbeddingService
         embedding_service = EmbeddingService()
 
         embedding = await embedding_service.embed_text(query)
@@ -255,7 +255,7 @@ class UnifiedRAGService:
         variations = self.query_optimizer.expand_query_llm(query, num_variations)
 
         # Search with all variations
-        from services.embedding_service import EmbeddingService
+        from embedding import EmbeddingService
         embedding_service = EmbeddingService()
 
         all_results = []
@@ -364,11 +364,11 @@ class UnifiedRAGService:
 
 ### Multi-Strategy Comparison
 
-Add to `services/comparison_service.py`:
+Add to `evaluation/comparison.py`:
 
 ```python
 from typing import List, Dict
-from services.unified_rag_service import UnifiedRAGService, RAGStrategy
+from rag.unified_service import UnifiedRAGService, RAGStrategy
 import asyncio
 
 class ComparisonService:
@@ -556,7 +556,7 @@ class ComparisonService:
 
 ### Metrics Tracker
 
-Create `services/metrics_tracker.py`:
+Create `evaluation/metrics_tracker.py`:
 
 ```python
 from typing import Dict, List
@@ -658,11 +658,11 @@ class MetricsTracker:
 
 ### Automatic Strategy Selection
 
-Create `services/strategy_recommender.py`:
+Create `evaluation/recommender.py`:
 
 ```python
 from typing import Dict, List
-from services.unified_rag_service import RAGStrategy
+from rag.unified_service import RAGStrategy
 
 class StrategyRecommender:
     """Recommend best RAG strategy based on query characteristics."""
@@ -866,9 +866,9 @@ Add to `cogs/comparison_cog.py`:
 ```python
 import discord
 from discord.ext import commands
-from services.unified_rag_service import UnifiedRAGService
-from services.comparison_service import ComparisonService
-from services.strategy_recommender import StrategyRecommender
+from rag.unified_service import UnifiedRAGService
+from evaluation.comparison import ComparisonService
+from evaluation.recommender import StrategyRecommender
 
 class ComparisonCog(commands.Cog):
     """RAG Strategy Comparison Commands."""
@@ -1059,11 +1059,11 @@ class ComparisonCog(commands.Cog):
 
 ### A/B Testing
 
-Create `services/ab_testing_service.py`:
+Create `evaluation/ab_testing.py`:
 
 ```python
 from typing import Dict, List
-from services.unified_rag_service import UnifiedRAGService, RAGStrategy
+from rag.unified_service import UnifiedRAGService, RAGStrategy
 import random
 
 class ABTestingService:

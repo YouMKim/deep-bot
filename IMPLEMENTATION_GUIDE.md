@@ -315,62 +315,83 @@ This project uses a **domain-based architecture** for better organization and ma
 
 ```
 deep-bot/
-├── embedding/              # Text → vector embeddings
+├── ai/                    # 🤖 Generation (LLM providers)
+│   ├── models.py          # AIRequest, AIResponse, TokenUsage, CostDetails
+│   ├── base.py            # BaseAIProvider
+│   ├── providers/         # OpenAI, Anthropic providers
+│   ├── service.py         # AIService
+│   └── tracker.py         # UserAITracker
+│
+├── storage/               # 📦 Unified persistence
+│   ├── messages.py        # SQLite for raw messages
+│   └── vectors/           # Vector storage
+│       └── providers/     # ChromaDB, Pinecone, etc.
+│
+├── embedding/             # 🔢 Text → vectors
 │   ├── base.py
 │   ├── sentence_transformer.py
 │   ├── openai.py
 │   └── factory.py
 │
-├── chunking/              # Message chunking strategies
+├── chunking/              # ✂️ Message chunking
 │   ├── base.py
 │   ├── service.py
-│   └── strategies/
+│   └── strategies/        # Temporal, conversation, token-aware, etc.
 │
-├── retrieval/             # Vector storage & search
+├── retrieval/             # 🔍 ALL retrieval strategies
 │   ├── base.py
-│   ├── factory.py
-│   └── providers/
-│       └── chroma.py
+│   ├── vector.py          # Vector similarity
+│   ├── keyword.py         # BM25, TF-IDF
+│   ├── hybrid.py          # Hybrid search
+│   ├── reranking.py       # Cross-encoder reranking
+│   └── advanced/          # HyDE, Self-RAG, RAG Fusion
 │
-├── storage/               # Data persistence
-│   └── message_storage.py
+├── rag/                   # 🎯 RAG orchestration
+│   ├── pipeline.py        # Main RAG pipeline
+│   ├── context_builder.py
+│   └── prompt_builder.py
 │
-├── rag/                   # RAG orchestration
-│   ├── memory_service.py
-│   └── pipeline.py
+├── evaluation/            # 📊 Evaluation & benchmarking
+│   ├── metrics.py         # Precision, Recall, MRR, NDCG
+│   ├── benchmark.py       # Benchmark runner
+│   ├── comparison.py      # Compare strategies
+│   └── datasets/          # Test queries, ground truth
 │
-├── ai/                    # LLM abstraction
-│   └── service.py
-│
-├── security/              # Security layer
+├── security/              # 🔒 Security layer
 │   ├── input_validator.py
 │   ├── rate_limiter.py
 │   └── prompt_injection.py
 │
-├── bot/                   # Discord bot
+├── bot/                   # 🤖 Discord bot
 │   ├── cogs/
 │   ├── loaders/
 │   └── utils/
 │
-└── utils/                 # General utilities
+└── utils/                 # 🛠️ General utilities
     └── ...
 ```
 
 **Why this structure?**
-- ✅ Clear separation of concerns (RAG vs Bot vs Security)
-- ✅ Easy to navigate ("Where's embedding code?" → `embedding/`)
-- ✅ Scales well (add new provider → `retrieval/providers/new.py`)
-- ✅ Testing boundaries explicit
-- ✅ Team-friendly for collaboration
+- ✅ **Unified storage** - Both messages and vectors in `storage/`
+- ✅ **All retrieval strategies** - Basic to advanced in `retrieval/`
+- ✅ **RAG as orchestration** - Combines retrieval + generation
+- ✅ **Evaluation first-class** - Compare and benchmark everything
+- ✅ **Clear layers** - Infrastructure → Strategy → Orchestration
+- ✅ **Easy to navigate** - "Where's HyDE?" → `retrieval/advanced/hyde.py`
+- ✅ **Scales well** - Add new strategies to existing folders
+- ✅ **Team-friendly** - Clear ownership per domain
 
 **Import style:**
 ```python
 # Clean, domain-based imports
+from ai import AIService, OpenAIProvider, AnthropicProvider
+from storage import MessageStorage
+from storage.vectors.providers.chroma import ChromaVectorStore
 from embedding import EmbeddingFactory
 from chunking import ChunkingService
-from retrieval import VectorStoreFactory
-from storage import MessageStorage
-from rag import ChunkedMemoryService
+from retrieval import VectorRetrieval, HybridRetrieval
+from rag import RAGPipeline
+from evaluation import BenchmarkRunner, ComparisonReport
 ```
 
 **Need to refactor?** See [REFACTORING_PLAN.md](./REFACTORING_PLAN.md) for migration guide.

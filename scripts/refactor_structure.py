@@ -20,17 +20,18 @@ import re
 
 # Directories to create - FULL STRUCTURE (complete domain architecture)
 DIRECTORIES = [
-    "ai/providers",        # AI domain (core/ + services/ai merged)
-    "embedding",           # Embedding domain (Phase 3) - empty initially
-    "chunking/strategies", # Chunking domain (Phase 4) - empty initially
-    "retrieval/providers", # Retrieval domain (Phase 5) - empty initially
-    "storage",             # Storage domain
-    "rag",                 # RAG orchestration domain
-    "security",            # Security domain (Phase 3 & 18) - empty initially
-    "bot/cogs",            # Discord bot domain
+    "ai/providers",                # AI domain (core/ + services/ai merged)
+    "storage/vectors/providers",   # Storage domain (unified messages + vectors)
+    "embedding",                   # Embedding domain (Phase 3) - empty initially
+    "chunking/strategies",         # Chunking domain (Phase 4) - empty initially
+    "retrieval/advanced",          # Retrieval domain (Phase 5+) - empty initially
+    "rag",                         # RAG orchestration domain (Phase 10+)
+    "evaluation/datasets",         # Evaluation domain (Phase 6.5 & 17) - empty initially
+    "security",                    # Security domain (Phase 3 & 18) - empty initially
+    "bot/cogs",                    # Discord bot domain
     "bot/loaders",
     "bot/utils",
-    "utils",               # General utilities
+    "utils",                       # General utilities
 ]
 
 # Import replacement map - handles core/ → ai/ merge and all domain moves
@@ -171,7 +172,10 @@ After running this script, you need to manually:
 5. Empty folders created for future phases:
    - embedding/* (Phase 3)
    - chunking/* (Phase 4)
-   - retrieval/* (Phase 5)
+   - storage/vectors/* (Phase 5)
+   - retrieval/* (Phase 5+)
+   - rag/* (Phase 10+)
+   - evaluation/* (Phase 6.5 & 17)
    - security/* (Phase 3 & 18)
 
 6. Test the bot:

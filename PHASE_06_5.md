@@ -39,7 +39,7 @@ With evaluation:
 
 ### Step 6.5.1: Create Test Query Dataset
 
-Create `tests/test_queries.py`:
+Create `evaluation/datasets/test_queries.py`:
 
 ```python
 """
@@ -144,7 +144,7 @@ class TestQueryDataset:
 
 ### Step 6.5.2: Implement Evaluation Metrics
 
-Create `services/evaluation_service.py`:
+Create `evaluation/metrics.py`:
 
 ```python
 """
@@ -339,7 +339,7 @@ class RetrievalEvaluator:
 
 ### Step 6.5.3: Create Strategy Comparison Tool
 
-Create `services/strategy_comparator.py`:
+Create `evaluation/comparison.py`:
 
 ```python
 """
@@ -348,9 +348,9 @@ Compare chunking strategies using test queries.
 Learning: This is how you scientifically choose the best strategy.
 """
 
-from services.chunked_memory_service import ChunkedMemoryService
-from services.evaluation_service import RetrievalEvaluator
-from tests.test_queries import TestQueryDataset
+from rag import ChunkedMemoryService
+from evaluation.metrics import RetrievalEvaluator
+from evaluation.datasets.test_queries import TestQueryDataset
 from typing import List, Dict
 import logging
 
@@ -533,11 +533,11 @@ async def evaluate_strategies(self, ctx, top_k: int = 5):
         status_msg = await ctx.send("📊 Evaluating strategies...")
 
         # Initialize services
-        from services.vector_store_factory import VectorStoreFactory
-        from services.embedding_service import EmbeddingServiceFactory
-        from services.chunked_memory_service import ChunkedMemoryService
-        from services.strategy_comparator import StrategyComparator
-        from tests.test_queries import TestQueryDataset
+        from retrieval import VectorStoreFactory
+        from embedding import EmbeddingServiceFactory
+        from rag import ChunkedMemoryService
+        from evaluation.comparison import StrategyComparator
+        from evaluation.datasets.test_queries import TestQueryDataset
 
         vector_store = VectorStoreFactory.create()
         embedding_provider = EmbeddingServiceFactory.create()
@@ -608,7 +608,7 @@ test_dataset = TestQueryDataset()
 print(f"Created {len(test_dataset.get_queries())} test queries")
 
 # 2. Run evaluation
-from services.strategy_comparator import StrategyComparator
+from evaluation.comparison import StrategyComparator
 
 comparator = StrategyComparator(chunked_memory)
 results = comparator.compare_strategies(

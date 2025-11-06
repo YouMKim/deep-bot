@@ -130,6 +130,17 @@ deep-bot/
 │   ├── context_builder.py       # Formats retrieved chunks into context
 │   └── prompt_builder.py        # Builds prompts with context
 │
+├── evaluation/                   # 📊 Evaluation & experimentation (Phase 6.5 & 17)
+│   ├── __init__.py
+│   ├── metrics.py               # Evaluation metrics (Precision, Recall, MRR, NDCG, etc.)
+│   ├── benchmark.py             # Benchmark runner for comparing configurations
+│   ├── comparison.py            # Side-by-side strategy comparison
+│   ├── ground_truth.py          # Ground truth Q&A management
+│   ├── reports.py               # Generate comparison reports
+│   └── datasets/
+│       ├── test_queries.json    # Standard test query sets
+│       └── qa_pairs.json        # Ground truth Q&A pairs
+│
 ├── security/                     # 🔒 Security domain (Phase 3 & 18)
 │   ├── __init__.py
 │   ├── input_validator.py      # Input validation
@@ -184,10 +195,18 @@ deep-bot/
    - Pipeline that coordinates: query → embed → retrieve → format → generate
    - Not redundant - the whole system IS RAG, this folder orchestrates it
 
-4. **Clear layers:**
+4. **`evaluation/` = Cross-domain experimentation** - Compare everything
+   - Evaluate chunking strategies (temporal vs conversation vs token-aware)
+   - Evaluate retrieval strategies (vector vs hybrid vs HyDE)
+   - Evaluate embedding models (sentence-transformers vs OpenAI)
+   - Evaluate full RAG pipelines (end-to-end comparisons)
+   - Top-level because it evaluates across all domains
+
+5. **Clear layers:**
    - Infrastructure: `storage/`, `embedding/`, `chunking/`
    - Strategy: `retrieval/`, `ai/`
    - Orchestration: `rag/`
+   - Evaluation: `evaluation/`
    - Interface: `bot/`
 
 ---
@@ -233,6 +252,18 @@ deep-bot/
 │                     │                     │                 │
 │  Persist Data       │                     │                 │
 └─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                  Cross-Cutting Concerns                      │
+├─────────────────────────────────────────────────────────────┤
+│  evaluation/        │  security/          │  utils/         │
+│  ├─ metrics.py      │  ├─ input_validator │  ├─ error_hand.│
+│  ├─ benchmark.py    │  ├─ rate_limiter    │  ├─ logger     │
+│  ├─ comparison.py   │  ├─ prompt_inject.  │  └─ secrets    │
+│  └─ ground_truth.py │  └─ audit_log       │                 │
+│                     │                     │                 │
+│  Measure & Compare │  Protect System     │  General Utils │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 **Query Flow (User asks a question):**
@@ -267,22 +298,24 @@ Return to user
 ```bash
 # Create all domain directories (complete structure)
 mkdir -p ai/providers
+mkdir -p storage/vectors/providers
 mkdir -p embedding
 mkdir -p chunking/strategies
-mkdir -p retrieval/providers
-mkdir -p storage
+mkdir -p retrieval/advanced
 mkdir -p rag
+mkdir -p evaluation/datasets
 mkdir -p security
 mkdir -p bot/cogs bot/loaders bot/utils
 mkdir -p utils
 
 # Create __init__.py files for all domains
 touch ai/__init__.py ai/providers/__init__.py
+touch storage/__init__.py storage/vectors/__init__.py storage/vectors/providers/__init__.py
 touch embedding/__init__.py
 touch chunking/__init__.py chunking/strategies/__init__.py
-touch retrieval/__init__.py retrieval/providers/__init__.py
-touch storage/__init__.py
+touch retrieval/__init__.py retrieval/advanced/__init__.py
 touch rag/__init__.py
+touch evaluation/__init__.py evaluation/datasets/__init__.py
 touch security/__init__.py
 touch bot/__init__.py bot/cogs/__init__.py bot/loaders/__init__.py bot/utils/__init__.py
 touch utils/__init__.py
@@ -292,6 +325,7 @@ touch utils/__init__.py
 - Clear architectural vision from day one
 - Phases 3-18 know exactly where to add files
 - No future restructuring needed
+- evaluation/ ready for Phase 6.5 and Phase 17
 
 ### Step 2: Move core/ → ai/ (Consolidate AI Domain)
 
@@ -365,22 +399,47 @@ chunking/strategies/conversation.py
 chunking/strategies/token_aware.py
 chunking/strategies/sliding_window.py
 
-# Phase 5 (Vector Retrieval)
+# Phase 5 (Vector Storage & Basic Retrieval)
+storage/vectors/base.py
+storage/vectors/factory.py
+storage/vectors/providers/chroma.py
 retrieval/base.py
-retrieval/factory.py
-retrieval/providers/chroma.py
+retrieval/vector.py
 
-# Phase 10+ (RAG Pipeline)
+# Phase 6.5 (Evaluation Framework)
+evaluation/metrics.py
+evaluation/benchmark.py
+evaluation/comparison.py
+evaluation/ground_truth.py
+
+# Phase 10 (RAG Pipeline)
 rag/pipeline.py
-rag/reranking.py (Phase 15)
-rag/query_optimization.py (Phase 15)
-rag/strategies.py (Phase 16)
+rag/context_builder.py
+rag/prompt_builder.py
+
+# Phase 14 (Hybrid Search)
+retrieval/keyword.py
+retrieval/hybrid.py
+
+# Phase 15 (Reranking)
+retrieval/reranking.py
+
+# Phase 16 (Advanced RAG)
+retrieval/advanced/hyde.py
+retrieval/advanced/self_rag.py
+retrieval/advanced/fusion.py
+
+# Phase 17 (RAG Comparison Dashboard)
+evaluation/reports.py
+evaluation/datasets/test_queries.json
+evaluation/datasets/qa_pairs.json
 
 # Phase 18 (Advanced Security)
 security/audit_log.py
 ```
 
 **Benefit:** When you implement Phase 3, you already know it goes in `embedding/` and `security/`!
+**Evaluation from start:** evaluation/ folder structure ready for Phases 6.5 and 17
 
 ### Step 6: Create __init__.py Exports
 
@@ -456,20 +515,37 @@ __all__ = [
 
 **storage/__init__.py:**
 ```python
-"""Storage domain - Data persistence."""
+"""Storage domain - Unified persistence (messages + vectors)."""
 
-from storage.message_storage import MessageStorage
+from storage.messages import MessageStorage
 
 __all__ = ["MessageStorage"]
+
+# Note: Vector stores accessed via storage.vectors.providers
+# Example: from storage.vectors.providers.chroma import ChromaVectorStore
 ```
 
 **rag/__init__.py:**
 ```python
-"""RAG domain - Retrieval-Augmented Generation orchestration."""
+"""RAG domain - RAG orchestration and pipeline."""
 
-from rag.memory_service import MemoryService
+# Note: Initially empty - will export RAGPipeline in Phase 10
+# Example future exports:
+# from rag.pipeline import RAGPipeline
+# from rag.context_builder import ContextBuilder
+# __all__ = ["RAGPipeline", "ContextBuilder"]
+```
 
-__all__ = ["MemoryService"]
+**evaluation/__init__.py:**
+```python
+"""Evaluation domain - Benchmarking and comparison."""
+
+# Note: Initially empty - will export evaluation tools in Phase 6.5
+# Example future exports:
+# from evaluation.metrics import precision_at_k, recall_at_k, mrr, ndcg
+# from evaluation.benchmark import BenchmarkRunner
+# from evaluation.comparison import ComparisonReport
+# __all__ = ["precision_at_k", "recall_at_k", "BenchmarkRunner", "ComparisonReport"]
 ```
 
 **bot/__init__.py:**
