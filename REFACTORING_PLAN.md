@@ -62,15 +62,15 @@ deep-bot/
 
 ---
 
-## New Structure (Complete Domain Architecture)
+## New Structure (Final Clean Architecture)
 
 ```
 deep-bot/
 ├── bot.py                        # Main entry point
 ├── config.py                     # Global configuration
 │
-├── ai/                           # 🔀 AI domain (core/ + services/ai merged)
-│   ├── __init__.py              # Exports: AIService, AIRequest, AIResponse, etc.
+├── ai/                           # 🔀 AI/Generation domain (core/ + services/ai merged)
+│   ├── __init__.py              # Exports: AIService, AIRequest, AIResponse, providers, etc.
 │   ├── models.py                # ← core/ai_models.py (AIRequest, AIResponse, TokenUsage, CostDetails)
 │   ├── base.py                  # ← core/base_provider.py (BaseAIProvider)
 │   ├── providers/               # ← core/providers/
@@ -80,14 +80,27 @@ deep-bot/
 │   ├── service.py               # ← services/ai_service.py (AIService)
 │   └── tracker.py               # ← services/user_ai_tracker.py (UserAITracker)
 │
-├── embedding/                    # 🆕 Embedding domain (Phase 3)
+├── storage/                      # 📦 Unified persistence (messages + vectors)
+│   ├── __init__.py
+│   ├── messages.py              # ← services/message_storage.py (SQLite for raw messages)
+│   └── vectors/                 # Vector storage (Phase 5)
+│       ├── __init__.py
+│       ├── base.py              # VectorStore abstract class
+│       ├── factory.py           # Factory pattern
+│       └── providers/
+│           ├── __init__.py
+│           ├── chroma.py        # ChromaDB adapter
+│           ├── pinecone.py      # Pinecone adapter (future)
+│           └── qdrant.py        # Qdrant adapter (future)
+│
+├── embedding/                    # 🔢 Embedding domain (Phase 3)
 │   ├── __init__.py
 │   ├── base.py                  # EmbeddingProvider abstract class
-│   ├── sentence_transformer.py  # Local embeddings
+│   ├── sentence_transformer.py  # Local embeddings (sentence-transformers)
 │   ├── openai.py               # OpenAI embeddings
 │   └── factory.py              # Factory pattern
 │
-├── chunking/                     # 🆕 Chunking domain (Phase 4)
+├── chunking/                     # ✂️ Chunking domain (Phase 4)
 │   ├── __init__.py
 │   ├── base.py                  # Chunk data structure
 │   ├── service.py               # ChunkingService
@@ -95,30 +108,27 @@ deep-bot/
 │       ├── __init__.py
 │       ├── temporal.py          # Time-window chunking
 │       ├── conversation.py      # Conversation-gap chunking
-│       ├── token_aware.py       # Token-limit aware
-│       └── sliding_window.py    # Sliding window
+│       ├── token_aware.py       # Token-limit aware chunking
+│       └── sliding_window.py    # Sliding window chunking
 │
-├── retrieval/                    # 🆕 Vector retrieval domain (Phase 5)
+├── retrieval/                    # 🔍 ALL retrieval strategies (Phase 5+)
 │   ├── __init__.py
-│   ├── base.py                  # VectorStore abstract class
-│   ├── factory.py               # Factory pattern
-│   └── providers/
+│   ├── base.py                  # RetrievalStrategy abstract class
+│   ├── vector.py                # Vector similarity search (Phase 5)
+│   ├── keyword.py               # BM25, TF-IDF keyword search (Phase 14)
+│   ├── hybrid.py                # Hybrid search (vector + keyword + RRF) (Phase 14)
+│   ├── reranking.py             # Cross-encoder reranking (Phase 15)
+│   └── advanced/                # Advanced retrieval strategies (Phase 16)
 │       ├── __init__.py
-│       ├── chroma.py           # ChromaDB adapter
-│       ├── pinecone.py         # Pinecone adapter (future)
-│       └── qdrant.py           # Qdrant adapter (future)
+│       ├── hyde.py              # Hypothetical Document Embeddings
+│       ├── self_rag.py          # Self-Reflective RAG
+│       └── fusion.py            # RAG Fusion (multi-query synthesis)
 │
-├── storage/                      # 📦 Data persistence domain
+├── rag/                          # 🎯 RAG orchestration (Phase 10+)
 │   ├── __init__.py
-│   └── message_storage.py       # ← services/message_storage.py
-│
-├── rag/                          # 🧠 RAG orchestration domain
-│   ├── __init__.py
-│   ├── memory_service.py        # ← services/memory_service.py
-│   ├── pipeline.py              # RAG pipeline (Phase 10)
-│   ├── reranking.py            # Reranking logic (Phase 15)
-│   ├── query_optimization.py   # Query expansion (Phase 15)
-│   └── strategies.py           # Advanced RAG (Phase 16)
+│   ├── pipeline.py              # Main RAG pipeline (orchestrates embedding + retrieval + generation)
+│   ├── context_builder.py       # Formats retrieved chunks into context
+│   └── prompt_builder.py        # Builds prompts with context
 │
 ├── security/                     # 🔒 Security domain (Phase 3 & 18)
 │   ├── __init__.py
@@ -159,42 +169,94 @@ deep-bot/
 - 📦 = Simple move
 - 🆕 = Create new (empty, filled in future phases)
 
-**Key Changes:**
-1. **Merge `core/` → `ai/`** - Single AI domain (not two!)
-2. **Create ALL domain folders** - Even if empty initially
-3. **Move existing files** - Into proper domains
-4. **Future phases** - Just add files to existing structure
+**Key Architectural Decisions:**
+
+1. **Unified `storage/`** - Both message and vector storage in one domain
+   - `messages.py` - SQLite for raw Discord messages
+   - `vectors/` - Vector stores (ChromaDB, Pinecone, etc.)
+
+2. **`retrieval/` = ALL retrieval strategies** - From basic to advanced
+   - Basic: vector, keyword, hybrid
+   - Advanced: HyDE, Self-RAG, RAG Fusion
+   - All about HOW to retrieve relevant information
+
+3. **`rag/` = Orchestration only** - Combines retrieval + generation
+   - Pipeline that coordinates: query → embed → retrieve → format → generate
+   - Not redundant - the whole system IS RAG, this folder orchestrates it
+
+4. **Clear layers:**
+   - Infrastructure: `storage/`, `embedding/`, `chunking/`
+   - Strategy: `retrieval/`, `ai/`
+   - Orchestration: `rag/`
+   - Interface: `bot/`
 
 ---
 
-## Revised Architecture Diagram
+## Architecture Diagram (Layered Design)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Application Layers                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
+│                    Interface Layer                           │
 │  bot/cogs/                                                   │
-│     └─> Uses ai/, rag/, storage/                            │
-│                                                               │
-│  ai/service.py                                               │
-│     └─> Uses core/providers/                                 │
-│                                                               │
-│  rag/memory_service.py                                       │
-│     └─> Uses embedding/, retrieval/, storage/                │
-│                                                               │
-│  core/providers/                                             │
-│     └─> Base AI abstraction (OpenAI, Anthropic)             │
-│                                                               │
+│     └─> User commands (!ask, !summary, etc.)                │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│                  Orchestration Layer                         │
+│  rag/pipeline.py                                             │
+│     └─> Coordinates: Embed → Retrieve → Format → Generate   │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Strategy Layer                            │
+│  retrieval/         │  ai/                                   │
+│  ├─ vector.py       │  ├─ providers/                        │
+│  ├─ keyword.py      │  │   ├─ openai.py                    │
+│  ├─ hybrid.py       │  │   └─ anthropic.py                 │
+│  ├─ reranking.py    │  └─ service.py                       │
+│  └─ advanced/       │                                        │
+│      ├─ hyde.py     │  How to GENERATE                      │
+│      ├─ self_rag.py │                                        │
+│      └─ fusion.py   │                                        │
+│                     │                                        │
+│  How to RETRIEVE   │                                        │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│                 Infrastructure Layer                         │
+│  storage/           │  embedding/         │  chunking/      │
+│  ├─ messages.py     │  ├─ sentence_trans. │  ├─ service.py │
+│  └─ vectors/        │  ├─ openai.py       │  └─ strategies/│
+│      └─ providers/  │  └─ factory.py      │                 │
+│          ├─ chroma  │                     │                 │
+│          ├─ pinecone│  Text → Vectors     │  Text → Chunks │
+│                     │                     │                 │
+│  Persist Data       │                     │                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Clean separation:**
-- `core/` = Base AI provider abstraction (multi-provider support)
-- `ai/` = Application-level AI services (summaries, generation)
-- `rag/` = RAG-specific logic (memory, retrieval)
-- `bot/` = Discord-specific code
-- `embedding/`, `chunking/`, `retrieval/` = RAG components
+**Query Flow (User asks a question):**
+```
+User: "What did Alice say about Python?"
+         ↓
+bot/cogs/chatbot.py receives command
+         ↓
+rag/pipeline.query("What did Alice say...")
+         ├─> embedding.embed(query) → [0.23, -0.45, ...]
+         ├─> retrieval.retrieve(query_vector) → [chunk1, chunk2, chunk3]
+         │      └─> storage/vectors/ finds similar chunks
+         ├─> context_builder.build(chunks) → formatted context
+         ├─> prompt_builder.build(query, context) → final prompt
+         └─> ai/service.generate(prompt) → "Alice mentioned..."
+         ↓
+Return to user
+```
+
+**Clear responsibilities:**
+- **Interface** (`bot/`) - Receives user input
+- **Orchestration** (`rag/`) - Coordinates the RAG pipeline
+- **Strategy** (`retrieval/`, `ai/`) - Implements algorithms
+- **Infrastructure** (`storage/`, `embedding/`, `chunking/`) - Provides capabilities
 
 ---
 
