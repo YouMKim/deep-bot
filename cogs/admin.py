@@ -326,5 +326,111 @@ class Admin(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ Error switching provider: {e}")
 
+    @commands.command(name='ai_model', help='Switch AI model within current provider (Admin only)')
+    async def ai_model(self, ctx, model: str = None):
+        """
+        Get or set the AI model. (Admin only)
+
+        Usage:
+            !ai_model - Show current model and available models
+            !ai_model gpt-4o - Switch to GPT-4o
+            !ai_model claude-3-5-sonnet - Switch to Claude 3.5 Sonnet
+        """
+        from config import Config
+
+        # Manual owner check
+        if str(ctx.author.id) != str(Config.BOT_OWNER_ID):
+            await ctx.send("🚫 **Access Denied!** Only the bot admin can change AI models.")
+            return
+
+        # Get AI service from Summary cog
+        summary_cog = self.bot.get_cog("Summary")
+        if not summary_cog:
+            await ctx.send("❌ Summary cog not loaded. Cannot access AI service.")
+            return
+
+        if model is None:
+            # Show current model and available models
+            current_model = summary_cog.ai_service.get_current_model()
+            available_models = summary_cog.ai_service.get_available_models()
+            provider_name = summary_cog.ai_service.provider_name
+
+            embed = discord.Embed(
+                title=f"🤖 AI Models for {provider_name.title()}",
+                description=f"**Current Model:** `{current_model}`",
+                color=discord.Color.blue()
+            )
+
+            # Group models by category for better display
+            if provider_name == "openai":
+                model_groups = {
+                    "o1 Series (Reasoning)": [m for m in available_models if m.startswith("o1")],
+                    "GPT-4o Series": [m for m in available_models if m.startswith("gpt-4o") and "mini" not in m],
+                    "GPT-4o Mini": [m for m in available_models if "4o-mini" in m],
+                    "GPT-4 Turbo": [m for m in available_models if "4-turbo" in m],
+                    "GPT-4": [m for m in available_models if m.startswith("gpt-4") and "turbo" not in m and "4o" not in m],
+                    "GPT-3.5": [m for m in available_models if "3.5" in m],
+                }
+            else:  # anthropic
+                model_groups = {
+                    "Claude 3.5 Sonnet": [m for m in available_models if "3-5-sonnet" in m],
+                    "Claude 3.5 Haiku": [m for m in available_models if "3-5-haiku" in m],
+                    "Claude 3 Opus": [m for m in available_models if "3-opus" in m],
+                    "Claude 3 Sonnet": [m for m in available_models if "3-sonnet" in m and "3-5" not in m],
+                    "Claude 3 Haiku": [m for m in available_models if "3-haiku" in m and "3-5" not in m],
+                }
+
+            for category, models in model_groups.items():
+                if models:
+                    # Get pricing for the first model in category
+                    pricing = summary_cog.ai_service.provider.PRICING_TABLE.get(models[0], {})
+                    price_text = f"${pricing.get('prompt', 0):.2f}/${pricing.get('completion', 0):.2f} per 1M tokens"
+
+                    model_list = "\n".join([f"• `{m}`" for m in models[:3]])  # Show max 3 models per category
+                    if len(models) > 3:
+                        model_list += f"\n• ... and {len(models) - 3} more"
+
+                    embed.add_field(
+                        name=f"{category} ({price_text})",
+                        value=model_list,
+                        inline=False
+                    )
+
+            embed.set_footer(text="Use !ai_model <model_name> to switch models")
+            await ctx.send(embed=embed)
+            return
+
+        # Switch model
+        try:
+            summary_cog.ai_service.switch_model(model)
+
+            # Get pricing info
+            pricing = summary_cog.ai_service.provider.PRICING_TABLE.get(model, {})
+            price_text = f"${pricing.get('prompt', 0):.2f}/${pricing.get('completion', 0):.2f} per 1M tokens"
+
+            embed = discord.Embed(
+                title="✅ Model Switched",
+                description=f"Now using: **{model}**",
+                color=discord.Color.green()
+            )
+
+            embed.add_field(
+                name="Provider",
+                value=summary_cog.ai_service.provider_name.title(),
+                inline=True
+            )
+
+            embed.add_field(
+                name="Pricing",
+                value=price_text,
+                inline=True
+            )
+
+            await ctx.send(embed=embed)
+        except ValueError as e:
+            await ctx.send(f"❌ {str(e)}")
+        except Exception as e:
+            await ctx.send(f"❌ Error switching model: {e}")
+
 async def setup(bot):
     await bot.add_cog(Admin(bot))

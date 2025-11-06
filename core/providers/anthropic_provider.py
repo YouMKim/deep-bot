@@ -8,29 +8,26 @@ from ..ai_models import AIRequest, AIResponse, TokenUsage, CostDetails
 
 
 class AnthropicProvider(BaseAIProvider):
-    # Anthropic pricing per 1M tokens (updated 2025 with Claude 4.5 models)
+    # Anthropic pricing per 1M tokens (updated January 2025)
     # Source: https://www.anthropic.com/pricing
     PRICING_TABLE = {
-        # Claude 4.5 Series (Latest - 2025)
-        "claude-sonnet-4-5": {"prompt": 3.00, "completion": 15.00},  # $3/$15 per 1M tokens
-        "claude-haiku-4-5": {"prompt": 1.00, "completion": 5.00},  # $1/$5 per 1M tokens
-        "claude-opus-4-1": {"prompt": 15.00, "completion": 75.00},  # $15/$75 per 1M tokens
-        
-        # Claude 3.5 Series
+        # Claude 3.5 Series (Latest)
         "claude-3-5-sonnet-20241022": {"prompt": 3.00, "completion": 15.00},  # $3/$15 per 1M tokens
-        "claude-3-5-sonnet": {"prompt": 3.00, "completion": 15.00},
+        "claude-3-5-sonnet-20240620": {"prompt": 3.00, "completion": 15.00},  # $3/$15 per 1M tokens
+        "claude-3-5-sonnet": {"prompt": 3.00, "completion": 15.00},  # $3/$15 per 1M tokens
+        "claude-3-5-haiku-20241022": {"prompt": 1.00, "completion": 5.00},  # $1/$5 per 1M tokens
         "claude-3-5-haiku": {"prompt": 1.00, "completion": 5.00},  # $1/$5 per 1M tokens
-        
+
         # Claude 3 Series
+        "claude-3-opus-20240229": {"prompt": 15.00, "completion": 75.00},  # $15/$75 per 1M tokens
         "claude-3-opus": {"prompt": 15.00, "completion": 75.00},  # $15/$75 per 1M tokens
-        "claude-3-opus-20240229": {"prompt": 15.00, "completion": 75.00},
+        "claude-3-sonnet-20240229": {"prompt": 3.00, "completion": 15.00},  # $3/$15 per 1M tokens
         "claude-3-sonnet": {"prompt": 3.00, "completion": 15.00},  # $3/$15 per 1M tokens
-        "claude-3-sonnet-20240229": {"prompt": 3.00, "completion": 15.00},
+        "claude-3-haiku-20240307": {"prompt": 0.25, "completion": 1.25},  # $0.25/$1.25 per 1M tokens
         "claude-3-haiku": {"prompt": 0.25, "completion": 1.25},  # $0.25/$1.25 per 1M tokens
-        "claude-3-haiku-20240307": {"prompt": 0.25, "completion": 1.25},
     }
-    
-    def __init__(self, api_key: str, default_model: str = "claude-haiku-4-5"):
+
+    def __init__(self, api_key: str, default_model: str = "claude-3-5-haiku"):
         from anthropic import Anthropic
         self.client = Anthropic(api_key=api_key)
         self.default_model = default_model
@@ -101,21 +98,18 @@ class AnthropicProvider(BaseAIProvider):
     def supports_model(self, model: str) -> bool:
         """Check if this provider supports a model."""
         supported_models = [
-            "claude-sonnet-4-5",  # Latest Claude 4.5 series (2025)
-            "claude-haiku-4-5",   # Latest Claude 4.5 series (2025)
-            "claude-opus-4-1",    # Claude 4.1 series (2025)
-            "claude-3-5-sonnet",  # Claude 3.5 series
-            "claude-3-5-haiku",   # Claude 3.5 series
-            "claude-3-opus",      # Claude 3 series
-            "claude-3-sonnet",    # Claude 3 series
-            "claude-3-haiku",     # Claude 3 series
+            "claude-3-5-sonnet",  # Claude 3.5 Sonnet series
+            "claude-3-5-haiku",   # Claude 3.5 Haiku series
+            "claude-3-opus",      # Claude 3 Opus series
+            "claude-3-sonnet",    # Claude 3 Sonnet series
+            "claude-3-haiku",     # Claude 3 Haiku series
         ]
-        
+
         # Check if model starts with any supported prefix
         for supported in supported_models:
             if model.startswith(supported):
                 return True
-        
+
         return False
     
     def get_default_model(self) -> str:

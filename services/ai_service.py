@@ -17,16 +17,24 @@ class AIService:
         },
     }
 
-    def __init__(self, provider_name: str = "openai"):
+    def __init__(self, provider_name: str = "openai", model: str = None):
         """
         Initialize AI service with a specific provider.
-        
+
         Args:
             provider_name: Either "openai" or "anthropic"
+            model: Specific model to use (optional, uses provider default if not specified)
         """
         config = AIConfig(model_name=provider_name)
         self.provider = create_provider(config)
         self.provider_name = provider_name
+
+        # Override default model if specified
+        if model:
+            if self.provider.supports_model(model):
+                self.provider.default_model = model
+            else:
+                raise ValueError(f"Model '{model}' not supported by provider '{provider_name}'")
 
     async def summarize_with_style(self, text: str, style: str = "generic") -> dict:
         """
@@ -87,12 +95,12 @@ class AIService:
     async def generate(self, prompt: str, max_tokens: int = 200, temperature: float = 0.7) -> dict:
         """
         Generate a response for any prompt (generic AI completion).
-        
+
         Args:
             prompt: The prompt text to send to the AI
             max_tokens: Maximum tokens in the response (default: 200)
             temperature: Model temperature 0-2 (default: 0.7)
-            
+
         Returns:
             Dictionary with response results and metadata
         """
@@ -101,9 +109,9 @@ class AIService:
             max_tokens=max_tokens,
             temperature=temperature
         )
-        
+
         response = await self.provider.complete(request)
-        
+
         return {
             "content": response.content,
             "tokens_prompt": response.usage.prompt_tokens,
@@ -113,3 +121,30 @@ class AIService:
             "cost": response.cost.total_cost,
             "latency_ms": response.latency_ms,
         }
+
+    def get_current_model(self) -> str:
+        """Get the currently configured model."""
+        return self.provider.get_default_model()
+
+    def get_available_models(self) -> list:
+        """Get list of available models for the current provider."""
+        return list(self.provider.PRICING_TABLE.keys())
+
+    def switch_model(self, model: str) -> None:
+        """
+        Switch to a different model within the current provider.
+
+        Args:
+            model: The model name to switch to
+
+        Raises:
+            ValueError: If the model is not supported by the current provider
+        """
+        if not self.provider.supports_model(model):
+            available = ", ".join(self.get_available_models())
+            raise ValueError(
+                f"Model '{model}' not supported by provider '{self.provider_name}'. "
+                f"Available models: {available}"
+            )
+
+        self.provider.default_model = model

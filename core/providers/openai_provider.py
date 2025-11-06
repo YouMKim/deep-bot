@@ -7,32 +7,34 @@ from ..ai_models import AIRequest, AIResponse, TokenUsage, CostDetails
 
 class OpenAIProvider(BaseAIProvider):
 
-    # OpenAI pricing per 1K tokens (updated 2025 with GPT-5 models)
+    # OpenAI pricing per 1K tokens (updated January 2025)
     # Source: https://openai.com/api/pricing/
     PRICING_TABLE = {
-        # GPT-5 Series (Latest - 2025)
-        "gpt-5": {"prompt": 0.00125, "completion": 0.01},  # $1.25/$10 per 1M tokens
-        "gpt-5-mini": {"prompt": 0.00025, "completion": 0.002},  # $0.25/$2 per 1M tokens
-        
-        # GPT-4.1 Series
-        "gpt-4-1": {"prompt": 0.002, "completion": 0.008},  # $2/$8 per 1M tokens
-        
-        # GPT-4o Series
+        # o1 Series (Reasoning models)
+        "o1-preview": {"prompt": 0.015, "completion": 0.06},  # $15/$60 per 1M tokens
+        "o1-mini": {"prompt": 0.003, "completion": 0.012},  # $3/$12 per 1M tokens
+
+        # GPT-4o Series (Latest)
         "gpt-4o": {"prompt": 0.0025, "completion": 0.01},  # $2.50/$10 per 1M tokens
+        "gpt-4o-2024-11-20": {"prompt": 0.0025, "completion": 0.01},
         "gpt-4o-2024-08-06": {"prompt": 0.0025, "completion": 0.01},
         "gpt-4o-2024-05-13": {"prompt": 0.0025, "completion": 0.01},
-        
+
         # GPT-4o Mini
         "gpt-4o-mini": {"prompt": 0.00015, "completion": 0.0006},  # $0.15/$0.60 per 1M tokens
         "gpt-4o-mini-2024-07-18": {"prompt": 0.00015, "completion": 0.0006},
-        
-        # GPT-4 Series
-        "gpt-4": {"prompt": 0.03, "completion": 0.06},  # $30/$60 per 1M tokens
-        "gpt-4-32k": {"prompt": 0.06, "completion": 0.12},  # $60/$120 per 1M tokens
+
+        # GPT-4 Turbo
         "gpt-4-turbo": {"prompt": 0.01, "completion": 0.03},  # $10/$30 per 1M tokens
-        
-        # GPT-3.5 Series
+        "gpt-4-turbo-2024-04-09": {"prompt": 0.01, "completion": 0.03},
+
+        # GPT-4 (Legacy)
+        "gpt-4": {"prompt": 0.03, "completion": 0.06},  # $30/$60 per 1M tokens
+        "gpt-4-0613": {"prompt": 0.03, "completion": 0.06},
+
+        # GPT-3.5 Turbo
         "gpt-3.5-turbo": {"prompt": 0.0005, "completion": 0.0015},  # $0.50/$1.50 per 1M tokens
+        "gpt-3.5-turbo-0125": {"prompt": 0.0005, "completion": 0.0015},
     }
     
     def __init__(self, api_key: str, default_model: str = "gpt-4o-mini"):
@@ -49,9 +51,9 @@ class OpenAIProvider(BaseAIProvider):
             "messages": [{"role": "user", "content": request.prompt}],
         }
         
-        # GPT-5 models use max_completion_tokens instead of max_tokens
+        # o1 models use max_completion_tokens instead of max_tokens
         if request.max_tokens:
-            if model.startswith("gpt-5"):
+            if model.startswith("o1"):
                 params["max_completion_tokens"] = request.max_tokens
             else:
                 params["max_tokens"] = request.max_tokens
@@ -70,7 +72,7 @@ class OpenAIProvider(BaseAIProvider):
         
         cost = self.calculate_cost(model, usage)
         
-        # Handle empty content (can happen with GPT-5 models)
+        # Handle empty content (can happen with o1 models)
         content = response.choices[0].message.content or ""
         
         return AIResponse(
@@ -106,20 +108,19 @@ class OpenAIProvider(BaseAIProvider):
     def supports_model(self, model: str) -> bool:
         """Check if this provider supports a model."""
         supported_models = [
-            "gpt-5",            # Latest GPT-5 series (2025)
-            "gpt-5-mini",       # Latest GPT-5 mini series (2025)
-            "gpt-4-1",          # GPT-4.1 series
+            "o1-preview",       # o1 reasoning series
+            "o1-mini",          # o1 mini reasoning series
             "gpt-4o",           # GPT-4o series
             "gpt-4o-mini",      # GPT-4o mini series
             "gpt-4-turbo",      # GPT-4 turbo series
             "gpt-4",            # GPT-4 series
             "gpt-3.5-turbo",    # GPT-3.5 turbo series
         ]
-        
+
         for supported in supported_models:
             if model.startswith(supported):
                 return True
-        
+
         return False
     
     def get_default_model(self) -> str:
