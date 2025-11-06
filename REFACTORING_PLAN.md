@@ -1,22 +1,26 @@
 # Refactoring Plan: Domain-Based Architecture 🏗️
 
-**Goal:** Reorganize codebase from flat `services/` structure to domain-based architecture, **while preserving the excellent `core/` AI abstraction that already exists**.
+**Goal:** Set up complete domain-based architecture with proper separation of concerns. Move existing code into the right places and create structure for future RAG components.
 
-**Estimated Time:** 1-2 hours (less than originally estimated!)
+**Estimated Time:** 2-3 hours
 
-**Risk Level:** Low (mostly file moves within `services/`, `core/` stays untouched)
+**Risk Level:** Low (mostly directory creation + file moves, git history preserved)
 
 ---
 
-## ⚠️ IMPORTANT: Keep `core/` Unchanged!
+## 🎯 Strategy: Full Structure Now, Implementation Over Time
 
-Your existing `core/` directory is **already well-architected** with:
-- ✅ Clean provider abstraction (`BaseAIProvider`)
-- ✅ Proper data models (`AIRequest`, `AIResponse`, `TokenUsage`, `CostDetails`)
-- ✅ Multiple provider support (OpenAI, Anthropic)
-- ✅ Cost tracking built-in
+**Why set up everything now?**
+1. ✅ Clear architectural vision from day one
+2. ✅ No future restructuring needed (Phases 3-18 just add files)
+3. ✅ Easy to see where everything belongs
+4. ✅ Prevents technical debt
 
-**DO NOT MOVE OR MODIFY `core/`!** This refactoring is about reorganizing `services/` and `cogs/` only.
+**What we're doing:**
+1. **Move `core/` → `ai/`** (consolidate AI into one domain)
+2. **Create all domain folders** (embedding, chunking, retrieval, rag, security, bot, storage)
+3. **Move existing files** into proper domains
+4. **Future phases** add new files to already-organized structure
 
 ---
 
@@ -58,82 +62,108 @@ deep-bot/
 
 ---
 
-## New Structure (Revised Plan)
+## New Structure (Complete Domain Architecture)
 
 ```
 deep-bot/
-├── bot.py
-├── config.py
+├── bot.py                        # Main entry point
+├── config.py                     # Global configuration
 │
-├── core/                         # ✅ KEEP UNCHANGED - AI abstraction
-│   ├── __init__.py
-│   ├── base_provider.py
-│   ├── ai_models.py
-│   └── providers/
-│       ├── openai_provider.py
-│       └── anthropic_provider.py
-│
-├── ai/                           # 🆕 Application-level AI services
-│   ├── __init__.py
-│   ├── service.py                # AIService (from services/ai_service.py)
-│   └── tracker.py                # UserAITracker (from services/user_ai_tracker.py)
+├── ai/                           # 🔀 AI domain (core/ + services/ai merged)
+│   ├── __init__.py              # Exports: AIService, AIRequest, AIResponse, etc.
+│   ├── models.py                # ← core/ai_models.py (AIRequest, AIResponse, TokenUsage, CostDetails)
+│   ├── base.py                  # ← core/base_provider.py (BaseAIProvider)
+│   ├── providers/               # ← core/providers/
+│   │   ├── __init__.py
+│   │   ├── openai.py           # ← core/providers/openai_provider.py
+│   │   └── anthropic.py        # ← core/providers/anthropic_provider.py
+│   ├── service.py               # ← services/ai_service.py (AIService)
+│   └── tracker.py               # ← services/user_ai_tracker.py (UserAITracker)
 │
 ├── embedding/                    # 🆕 Embedding domain (Phase 3)
 │   ├── __init__.py
-│   ├── base.py
-│   ├── sentence_transformer.py
-│   ├── openai.py
-│   └── factory.py
+│   ├── base.py                  # EmbeddingProvider abstract class
+│   ├── sentence_transformer.py  # Local embeddings
+│   ├── openai.py               # OpenAI embeddings
+│   └── factory.py              # Factory pattern
 │
 ├── chunking/                     # 🆕 Chunking domain (Phase 4)
 │   ├── __init__.py
-│   ├── base.py
-│   ├── service.py
+│   ├── base.py                  # Chunk data structure
+│   ├── service.py               # ChunkingService
 │   └── strategies/
+│       ├── __init__.py
+│       ├── temporal.py          # Time-window chunking
+│       ├── conversation.py      # Conversation-gap chunking
+│       ├── token_aware.py       # Token-limit aware
+│       └── sliding_window.py    # Sliding window
 │
 ├── retrieval/                    # 🆕 Vector retrieval domain (Phase 5)
 │   ├── __init__.py
-│   ├── base.py
-│   ├── factory.py
+│   ├── base.py                  # VectorStore abstract class
+│   ├── factory.py               # Factory pattern
 │   └── providers/
-│       └── chroma.py
+│       ├── __init__.py
+│       ├── chroma.py           # ChromaDB adapter
+│       ├── pinecone.py         # Pinecone adapter (future)
+│       └── qdrant.py           # Qdrant adapter (future)
 │
-├── storage/                      # 🆕 Data persistence domain
+├── storage/                      # 📦 Data persistence domain
 │   ├── __init__.py
-│   └── message_storage.py        # From services/
+│   └── message_storage.py       # ← services/message_storage.py
 │
-├── rag/                          # 🆕 RAG orchestration domain
+├── rag/                          # 🧠 RAG orchestration domain
 │   ├── __init__.py
-│   └── memory_service.py         # From services/
+│   ├── memory_service.py        # ← services/memory_service.py
+│   ├── pipeline.py              # RAG pipeline (Phase 10)
+│   ├── reranking.py            # Reranking logic (Phase 15)
+│   ├── query_optimization.py   # Query expansion (Phase 15)
+│   └── strategies.py           # Advanced RAG (Phase 16)
 │
-├── security/                     # 🆕 Security domain
+├── security/                     # 🔒 Security domain (Phase 3 & 18)
 │   ├── __init__.py
-│   ├── input_validator.py
-│   ├── rate_limiter.py
-│   └── prompt_injection.py
+│   ├── input_validator.py      # Input validation
+│   ├── rate_limiter.py         # Rate limiting
+│   ├── prompt_injection.py     # Prompt injection defense
+│   └── audit_log.py            # Security audit logging
 │
-├── bot/                          # 🆕 Discord bot domain
+├── bot/                          # 🤖 Discord bot domain
 │   ├── __init__.py
-│   ├── cogs/                     # From cogs/
+│   ├── cogs/                    # ← cogs/
 │   │   ├── __init__.py
-│   │   ├── admin.py
-│   │   ├── basic.py
-│   │   └── summary.py
+│   │   ├── basic.py            # ← cogs/basic.py
+│   │   ├── admin.py            # ← cogs/admin.py
+│   │   ├── summary.py          # ← cogs/summary.py
+│   │   └── mvp_chatbot.py      # Phase 2 MVP
 │   ├── loaders/
 │   │   ├── __init__.py
-│   │   └── message_loader.py     # From services/
+│   │   └── message_loader.py   # ← services/message_loader.py
 │   └── utils/
-│       └── discord_utils.py
+│       ├── __init__.py
+│       └── discord_utils.py    # Discord formatting utilities
 │
-└── utils/                        # General utilities
-    └── ...
+├── utils/                        # 🛠️ General utilities (non-domain)
+│   ├── __init__.py
+│   ├── error_handler.py
+│   ├── secure_logger.py
+│   └── secrets_manager.py
+│
+└── data/                         # Data directories (unchanged)
+    ├── raw_messages/
+    └── chroma/
 ```
 
+**Legend:**
+- 🔀 = Merge existing folders
+- ← = Move from existing location
+- 📦 = Simple move
+- 🆕 = Create new (empty, filled in future phases)
+
 **Key Changes:**
-1. **Keep `core/` untouched** - It's already excellent!
-2. **Add `ai/`** - Application-level AI services (uses `core/`)
-3. **Reorganize `services/`** - Split by domain (storage, rag, bot)
-4. **Move `cogs/` → `bot/cogs/`** - Clear Discord bot boundary
+1. **Merge `core/` → `ai/`** - Single AI domain (not two!)
+2. **Create ALL domain folders** - Even if empty initially
+3. **Move existing files** - Into proper domains
+4. **Future phases** - Just add files to existing structure
 
 ---
 
@@ -170,11 +200,11 @@ deep-bot/
 
 ## Migration Steps (In Order)
 
-### Step 1: Create New Directory Structure
+### Step 1: Create All Domain Directories
 
 ```bash
-# Create new directories (core/ already exists - skip it!)
-mkdir -p ai
+# Create all domain directories (complete structure)
+mkdir -p ai/providers
 mkdir -p embedding
 mkdir -p chunking/strategies
 mkdir -p retrieval/providers
@@ -182,9 +212,10 @@ mkdir -p storage
 mkdir -p rag
 mkdir -p security
 mkdir -p bot/cogs bot/loaders bot/utils
+mkdir -p utils
 
-# Create __init__.py files
-touch ai/__init__.py
+# Create __init__.py files for all domains
+touch ai/__init__.py ai/providers/__init__.py
 touch embedding/__init__.py
 touch chunking/__init__.py chunking/strategies/__init__.py
 touch retrieval/__init__.py retrieval/providers/__init__.py
@@ -192,68 +223,240 @@ touch storage/__init__.py
 touch rag/__init__.py
 touch security/__init__.py
 touch bot/__init__.py bot/cogs/__init__.py bot/loaders/__init__.py bot/utils/__init__.py
-
-# Note: Do NOT touch core/ - it already has __init__.py and is well-structured!
+touch utils/__init__.py
 ```
 
-### Step 2: Move Existing Services
+**Why create empty folders?**
+- Clear architectural vision from day one
+- Phases 3-18 know exactly where to add files
+- No future restructuring needed
 
-**Current existing files to move:**
+### Step 2: Move core/ → ai/ (Consolidate AI Domain)
+
 ```bash
-# AI services
-services/ai_service.py → ai/service.py
-services/user_ai_tracker.py → ai/tracker.py
+# Move core/ AI abstraction into ai/
+mv core/ai_models.py ai/models.py
+mv core/base_provider.py ai/base.py
+mv core/providers/openai_provider.py ai/providers/openai.py
+mv core/providers/anthropic_provider.py ai/providers/anthropic.py
+
+# Update core/__init__.py → ai/__init__.py
+# (manual step - see Step 3)
+
+# Remove empty core/ directory
+rm -rf core/providers
+rmdir core
+```
+
+### Step 3: Move services/ Files to Proper Domains
+
+```bash
+# AI services (from services/ → ai/)
+mv services/ai_service.py ai/service.py
+mv services/user_ai_tracker.py ai/tracker.py
 
 # Storage
-services/message_storage.py → storage/message_storage.py
+mv services/message_storage.py storage/message_storage.py
 
 # RAG
-services/memory_service.py → rag/memory_service.py
+mv services/memory_service.py rag/memory_service.py
 
-# Bot
-services/message_loader.py → bot/loaders/message_loader.py
-cogs/*.py → bot/cogs/*.py
+# Bot loaders
+mv services/message_loader.py bot/loaders/message_loader.py
+
+# Remove empty services/ directory (if empty)
+# Check first: ls services/
+# If only empty files remain: rmdir services
 ```
 
-**Future files (created in later phases):**
+### Step 4: Move cogs/ → bot/cogs/
+
 ```bash
-# These don't exist yet - will be created in Phase 3+
-embedding/base.py         (Phase 3)
-embedding/sentence_transformer.py  (Phase 3)
-embedding/openai.py       (Phase 3)
-embedding/factory.py      (Phase 3)
+# Move all cog files
+mv cogs/admin.py bot/cogs/admin.py
+mv cogs/basic.py bot/cogs/basic.py
+mv cogs/summary.py bot/cogs/summary.py
 
-chunking/base.py          (Phase 4)
-chunking/service.py       (Phase 4)
-
-retrieval/base.py         (Phase 5)
-retrieval/providers/chroma.py (Phase 5)
-retrieval/factory.py      (Phase 5)
+# Remove old cogs directory
+rmdir cogs
 ```
 
-**New `embedding/__init__.py`:**
+### Step 5: Future Phase Files
+
+**These folders are empty now, filled in future phases:**
+
+```bash
+# Phase 3 (Security & Embedding)
+security/input_validator.py
+security/rate_limiter.py
+security/prompt_injection.py
+embedding/base.py
+embedding/sentence_transformer.py
+embedding/openai.py
+embedding/factory.py
+
+# Phase 4 (Chunking)
+chunking/base.py
+chunking/service.py
+chunking/strategies/temporal.py
+chunking/strategies/conversation.py
+chunking/strategies/token_aware.py
+chunking/strategies/sliding_window.py
+
+# Phase 5 (Vector Retrieval)
+retrieval/base.py
+retrieval/factory.py
+retrieval/providers/chroma.py
+
+# Phase 10+ (RAG Pipeline)
+rag/pipeline.py
+rag/reranking.py (Phase 15)
+rag/query_optimization.py (Phase 15)
+rag/strategies.py (Phase 16)
+
+# Phase 18 (Advanced Security)
+security/audit_log.py
+```
+
+**Benefit:** When you implement Phase 3, you already know it goes in `embedding/` and `security/`!
+
+### Step 6: Create __init__.py Exports
+
+**ai/__init__.py** (Consolidates core + services/ai):
 ```python
 """
-Embedding domain - Convert text to vector embeddings.
+AI domain - Language model abstraction and providers.
 
 Exports:
-    - EmbeddingProvider: Abstract base class
-    - SentenceTransformerEmbedder: Local embeddings
-    - OpenAIEmbedder: Cloud embeddings
-    - EmbeddingFactory: Factory for creating providers
+    Core Models:
+    - AIRequest, AIResponse, TokenUsage, CostDetails, AIConfig
+
+    Providers:
+    - BaseAIProvider: Abstract base class
+    - OpenAIProvider: OpenAI implementation
+    - AnthropicProvider: Anthropic implementation
+    - create_provider: Factory function
+
+    Services:
+    - AIService: Application-level AI service
+    - UserAITracker: Usage tracking
 """
 
-from embedding.base import EmbeddingProvider
-from embedding.sentence_transformer import SentenceTransformerEmbedder
-from embedding.openai import OpenAIEmbedder
-from embedding.factory import EmbeddingFactory
+# Core models (from ai/models.py <- core/ai_models.py)
+from ai.models import (
+    AIProvider,
+    AIConfig,
+    AIRequest,
+    AIResponse,
+    TokenUsage,
+    CostDetails
+)
+
+# Base provider (from ai/base.py <- core/base_provider.py)
+from ai.base import BaseAIProvider
+
+# Provider implementations (from ai/providers/)
+from ai.providers.openai import OpenAIProvider
+from ai.providers.anthropic import AnthropicProvider
+
+# Factory function
+def create_provider(config: AIConfig) -> BaseAIProvider:
+    """Create an AI provider based on configuration."""
+    if config.model_name == "openai" or "gpt" in config.model_name:
+        return OpenAIProvider(config)
+    elif config.model_name == "anthropic" or "claude" in config.model_name:
+        return AnthropicProvider(config)
+    else:
+        raise ValueError(f"Unknown provider: {config.model_name}")
+
+# Application services (from ai/service.py, ai/tracker.py)
+from ai.service import AIService
+from ai.tracker import UserAITracker
 
 __all__ = [
-    "EmbeddingProvider",
-    "SentenceTransformerEmbedder",
-    "OpenAIEmbedder",
-    "EmbeddingFactory",
+    # Core models
+    "AIProvider",
+    "AIConfig",
+    "AIRequest",
+    "AIResponse",
+    "TokenUsage",
+    "CostDetails",
+    # Providers
+    "BaseAIProvider",
+    "OpenAIProvider",
+    "AnthropicProvider",
+    "create_provider",
+    # Services
+    "AIService",
+    "UserAITracker",
 ]
+```
+
+**storage/__init__.py:**
+```python
+"""Storage domain - Data persistence."""
+
+from storage.message_storage import MessageStorage
+
+__all__ = ["MessageStorage"]
+```
+
+**rag/__init__.py:**
+```python
+"""RAG domain - Retrieval-Augmented Generation orchestration."""
+
+from rag.memory_service import MemoryService
+
+__all__ = ["MemoryService"]
+```
+
+**bot/__init__.py:**
+```python
+"""Discord bot domain - Commands and integrations."""
+
+# No exports needed - cogs are loaded by bot.py
+```
+
+**Future __init__.py files** (created in later phases):
+
+**embedding/__init__.py** (Phase 3):
+```python
+"""Embedding domain - Text to vector embeddings."""
+
+from embedding.base import EmbeddingProvider
+from embedding.factory import EmbeddingFactory
+
+__all__ = ["EmbeddingProvider", "EmbeddingFactory"]
+```
+
+**chunking/__init__.py** (Phase 4):
+```python
+"""Chunking domain - Message chunking strategies."""
+
+from chunking.base import Chunk
+from chunking.service import ChunkingService
+
+__all__ = ["Chunk", "ChunkingService"]
+```
+
+**retrieval/__init__.py** (Phase 5):
+```python
+"""Retrieval domain - Vector storage and similarity search."""
+
+from retrieval.base import VectorStore
+from retrieval.factory import VectorStoreFactory
+
+__all__ = ["VectorStore", "VectorStoreFactory"]
+```
+
+**security/__init__.py** (Phase 3 & 18):
+```python
+"""Security domain - Input validation and security."""
+
+from security.input_validator import InputValidator
+from security.rate_limiter import RateLimiter
+
+__all__ = ["InputValidator", "RateLimiter"]
 ```
 
 ### Step 3: Move Chunking Files
@@ -454,7 +657,10 @@ utils/secrets_manager.py → utils/secrets_manager.py  (stays)
 
 ### Before (Old Imports)
 ```python
-# Old imports
+# Old imports - from core/ and services/
+from core import create_provider, AIConfig, AIRequest, AIResponse
+from core.providers import OpenAIProvider, AnthropicProvider
+
 from services.ai_service import AIService
 from services.message_storage import MessageStorage
 from services.memory_service import MemoryService
@@ -464,35 +670,48 @@ from services.user_ai_tracker import UserAITracker
 from cogs.admin import AdminCog
 from cogs.summary import SummaryCog
 
-# Future RAG imports (from phases not yet implemented)
+# Future RAG imports (not yet implemented)
 from services.embedding_service import EmbeddingServiceFactory
 from services.chunking_service import ChunkingService
 from services.vector_store_factory import VectorStoreFactory
-from services.chunked_memory_service import ChunkedMemoryService
 ```
 
 ### After (New Imports)
 ```python
-# New imports - cleaner and domain-based
-from ai import AIService
-from ai.tracker import UserAITracker
+# New imports - clean, domain-based, hierarchical
+from ai import (
+    # Core models & providers (merged from core/)
+    AIConfig,
+    AIRequest,
+    AIResponse,
+    TokenUsage,
+    CostDetails,
+    BaseAIProvider,
+    OpenAIProvider,
+    AnthropicProvider,
+    create_provider,
+    # Application services (from services/)
+    AIService,
+    UserAITracker,
+)
+
 from storage import MessageStorage
 from rag import MemoryService
 from bot.loaders.message_loader import MessageLoader
-
 from bot.cogs.admin import AdminCog
 from bot.cogs.summary import SummaryCog
 
-# Future RAG imports (from phases not yet implemented)
-from embedding import EmbeddingFactory
-from chunking import ChunkingService
-from retrieval import VectorStoreFactory
-from rag import ChunkedMemoryService
-
-# Core AI providers (unchanged - already perfect!)
-from core import create_provider, AIConfig, AIRequest, AIResponse
-from core.providers import OpenAIProvider, AnthropicProvider
+# Future RAG imports (implemented in Phases 3-18)
+from embedding import EmbeddingFactory           # Phase 3
+from chunking import ChunkingService              # Phase 4
+from retrieval import VectorStoreFactory          # Phase 5
+from security import InputValidator, RateLimiter  # Phase 3 & 18
 ```
+
+**Benefits:**
+- ✅ Single `ai` import for all AI-related code (not `core` + `services.ai`)
+- ✅ Clear domain boundaries (`storage`, `rag`, `bot`, `security`)
+- ✅ Future phases have predefined import paths
 
 ---
 

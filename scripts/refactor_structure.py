@@ -18,30 +18,39 @@ from pathlib import Path
 import re
 
 
-# Directories to create (NOT including core/ - it already exists and is perfect!)
+# Directories to create - FULL STRUCTURE (complete domain architecture)
 DIRECTORIES = [
-    "ai",  # Application-level AI services
-    "embedding",  # Phase 3+
-    "chunking/strategies",  # Phase 4+
-    "retrieval/providers",  # Phase 5+
-    "storage",
-    "rag",
-    "security",  # Phase 3 & 18
-    "bot/cogs",
+    "ai/providers",        # AI domain (core/ + services/ai merged)
+    "embedding",           # Embedding domain (Phase 3) - empty initially
+    "chunking/strategies", # Chunking domain (Phase 4) - empty initially
+    "retrieval/providers", # Retrieval domain (Phase 5) - empty initially
+    "storage",             # Storage domain
+    "rag",                 # RAG orchestration domain
+    "security",            # Security domain (Phase 3 & 18) - empty initially
+    "bot/cogs",            # Discord bot domain
     "bot/loaders",
     "bot/utils",
+    "utils",               # General utilities
 ]
 
-# Import replacement map (existing services/ only - no future RAG imports yet!)
+# Import replacement map - handles core/ → ai/ merge and all domain moves
 IMPORT_MAP = {
-    # Existing services
+    # Core → AI (merge core/ into ai/)
+    "from core import": "from ai import",
+    "from core.providers import": "from ai.providers import",
+    "from core.ai_models import": "from ai.models import",
+    "from core.base_provider import": "from ai.base import",
+    "from core.providers.openai_provider import": "from ai.providers.openai import",
+    "from core.providers.anthropic_provider import": "from ai.providers.anthropic import",
+
+    # Services → Domains
     "from services.ai_service import": "from ai.service import",
     "from services.user_ai_tracker import": "from ai.tracker import",
     "from services.message_storage import": "from storage import",
     "from services.memory_service import": "from rag import",
     "from services.message_loader import": "from bot.loaders.message_loader import",
 
-    # Cogs
+    # Cogs → Bot
     "from cogs.": "from bot.cogs.",
 
     # Future RAG imports (for Phase documents)
@@ -133,30 +142,33 @@ def show_next_steps():
     print("""
 After running this script, you need to manually:
 
-**IMPORTANT: DO NOT touch core/ - it's already well-structured!**
+1. Move core/ → ai/ (consolidate AI domain):
+   - mv core/ai_models.py ai/models.py
+   - mv core/base_provider.py ai/base.py
+   - mv core/providers/openai_provider.py ai/providers/openai.py
+   - mv core/providers/anthropic_provider.py ai/providers/anthropic.py
+   - rm -rf core/providers && rmdir core
 
-1. Move existing services:
-   - services/ai_service.py → ai/service.py
-   - services/user_ai_tracker.py → ai/tracker.py
-   - services/message_storage.py → storage/message_storage.py
-   - services/memory_service.py → rag/memory_service.py
-   - services/message_loader.py → bot/loaders/message_loader.py
+2. Move services/ files to proper domains:
+   - mv services/ai_service.py ai/service.py
+   - mv services/user_ai_tracker.py ai/tracker.py
+   - mv services/message_storage.py storage/message_storage.py
+   - mv services/memory_service.py rag/memory_service.py
+   - mv services/message_loader.py bot/loaders/message_loader.py
 
-2. Move cogs:
-   - cogs/admin.py → bot/cogs/admin.py
-   - cogs/basic.py → bot/cogs/basic.py
-   - cogs/summary.py → bot/cogs/summary.py
+3. Move cogs/ → bot/cogs/:
+   - mv cogs/admin.py bot/cogs/admin.py
+   - mv cogs/basic.py bot/cogs/basic.py
+   - mv cogs/summary.py bot/cogs/summary.py
+   - rmdir cogs
 
-3. Move utilities:
-   - utils/discord_utils.py → bot/utils/discord_utils.py (if exists)
-
-4. Create __init__.py exports for each domain:
-   - ai/__init__.py
+4. Create __init__.py exports (see REFACTORING_PLAN.md for templates):
+   - ai/__init__.py (merges core + services/ai exports)
    - storage/__init__.py
    - rag/__init__.py
    - bot/__init__.py
 
-5. Future phases will create:
+5. Empty folders created for future phases:
    - embedding/* (Phase 3)
    - chunking/* (Phase 4)
    - retrieval/* (Phase 5)
@@ -164,7 +176,7 @@ After running this script, you need to manually:
 
 6. Test the bot:
    - python bot.py (check for import errors)
-   - Test commands in Discord
+   - Test commands in Discord (!ping, !summary, etc.)
    - Run pytest if you have tests
 
 7. Update documentation:
