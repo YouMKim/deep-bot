@@ -21,7 +21,7 @@ Embedding Service Abstraction
 
 #### Step 3.1: Create Abstract Base Class
 
-Create `services/embedding_service.py`:
+Create `embedding/base.py`:
 
 ```python
 from abc import ABC, abstractmethod
@@ -71,6 +71,8 @@ class EmbeddingProvider(ABC):
 
 #### Step 3.2: Implement SentenceTransformer Provider
 
+Create `embedding/sentence_transformer.py`:
+
 ```python
 from sentence_transformers import SentenceTransformer
 import logging
@@ -114,6 +116,8 @@ class SentenceTransformerEmbedder(EmbeddingProvider):
 ```
 
 #### Step 3.3: Implement OpenAI Provider
+
+Create `embedding/openai.py`:
 
 ```python
 import openai
@@ -189,6 +193,8 @@ class OpenAIEmbedder(EmbeddingProvider):
 ```
 
 #### Step 3.4: Create Factory
+
+Create `embedding/factory.py`:
 
 ```python
 from typing import Optional

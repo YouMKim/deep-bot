@@ -252,9 +252,9 @@ Learning: This is the key to natural chatbot conversations.
 We use both RAG (knowledge) and memory (context).
 """
 
-from services.rag_query_service import RAGQueryService
-from services.conversation_memory import ConversationMemory
-from services.ai_service import AIService
+from rag.pipeline import RAGQueryService
+from rag.conversation_memory import ConversationMemory
+from ai.service import AIService
 from typing import Dict, Optional
 from config import Config
 import logging
@@ -453,18 +453,18 @@ class ConversationalRAGService:
 
 ### Step 11.3: Add Chatbot Commands
 
-Create `cogs/chatbot.py`:
+Create `bot/cogs/chatbot.py`:
 
 ```python
 import discord
 from discord.ext import commands
-from services.conversational_rag_service import ConversationalRAGService
-from services.conversation_memory import ConversationMemory
-from services.rag_query_service import RAGQueryService
-from services.chunked_memory_service import ChunkedMemoryService
-from services.vector_store_factory import VectorStoreFactory
-from services.embedding_service import EmbeddingServiceFactory
-from services.ai_service import AIService
+from rag.conversational import ConversationalRAGService
+from rag.conversation_memory import ConversationMemory
+from rag.pipeline import RAGQueryService
+from storage.chunked_memory import ChunkedMemoryService
+from storage.vectors.factory import VectorStoreFactory
+from embedding.factory import EmbeddingServiceFactory
+from ai.service import AIService
 from config import Config
 import logging
 

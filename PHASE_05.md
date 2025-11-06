@@ -21,7 +21,7 @@ Vector Store Abstraction
 
 #### Step 5.1: Create Abstract Base Class
 
-Create `services/vector_store_base.py`:
+Create `storage/vectors/base.py`:
 
 ```python
 from abc import ABC, abstractmethod
@@ -94,10 +94,10 @@ class VectorStore(ABC):
 
 #### Step 5.2: Implement ChromaDB Adapter
 
-Create `services/vector_store_chroma.py`:
+Create `storage/vectors/providers/chroma.py`:
 
 ```python
-from services.vector_store_base import VectorStore
+from storage.vectors.base import VectorStore
 from data.chroma_client import chroma_client
 from typing import List, Dict
 import logging
@@ -179,13 +179,13 @@ class ChromaVectorStore(VectorStore):
 
 #### Step 5.3: Create Factory
 
-Create `services/vector_store_factory.py`:
+Create `storage/vectors/factory.py`:
 
 ```python
 from typing import Optional
 from config import Config
-from services.vector_store_base import VectorStore
-from services.vector_store_chroma import ChromaVectorStore
+from storage.vectors.base import VectorStore
+from storage.vectors.providers.chroma import ChromaVectorStore
 
 class VectorStoreFactory:
     """Factory for creating vector store instances"""

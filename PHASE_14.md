@@ -179,8 +179,8 @@ Learning: Combining rankings is tricky!
 - Reciprocal Rank Fusion (RRF) is simple and effective
 """
 
-from services.chunked_memory_service import ChunkedMemoryService
-from services.bm25_retriever import BM25Retriever
+from storage.chunked_memory import ChunkedMemoryService
+from retrieval.keyword import BM25Retriever
 from typing import List, Dict, Tuple
 import logging
 
@@ -360,7 +360,7 @@ class HybridSearchService:
 
 ### Step 14.3: Add Hybrid Search Commands
 
-Add to `cogs/chatbot.py`:
+Add to `bot/cogs/chatbot.py`:
 
 ```python
 @commands.command(name='hybrid_search')
@@ -375,8 +375,8 @@ async def hybrid_search(self, ctx, *, query: str):
     try:
         async with ctx.typing():
             # Initialize services
-            from services.hybrid_search_service import HybridSearchService
-            from services.bm25_retriever import BM25Retriever
+            from retrieval.hybrid import HybridSearchService
+            from retrieval.keyword import BM25Retriever
 
             # Get documents for BM25
             # TODO: Load from your chunked memory
@@ -424,8 +424,8 @@ async def compare_search(self, ctx, *, query: str):
     """
     try:
         async with ctx.typing():
-            from services.hybrid_search_service import HybridSearchService
-            from services.bm25_retriever import BM25Retriever
+            from retrieval.hybrid import HybridSearchService
+            from retrieval.keyword import BM25Retriever
 
             bm25 = BM25Retriever()
             # bm25.index_documents(your_chunks)

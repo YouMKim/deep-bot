@@ -21,7 +21,9 @@ Chunking Strategies
 
 #### Step 4.1: Design Chunk Data Structure
 
-Create `services/chunking_service.py`:
+Create `chunking/base.py` (Chunk data structure) and `chunking/service.py` (ChunkingService):
+
+**Note**: In the refactored architecture, chunking strategies can be split into `chunking/strategies/` files (temporal.py, conversation.py, token_aware.py, sliding_window.py), but for learning purposes, we'll show them together here.
 
 ```python
 from typing import List, Dict, Optional

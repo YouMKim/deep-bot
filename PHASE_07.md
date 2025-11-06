@@ -16,15 +16,15 @@ Bot Commands Integration
 
 #### Step 7.1: Add Chunk Channel Command
 
-Update `cogs/admin.py`:
+Update `bot/cogs/admin.py`:
 
 ```python
-from services.message_storage import MessageStorage
-from services.message_loader import MessageLoader
-from services.chunking_service import ChunkingService
-from services.chunked_memory_service import ChunkedMemoryService
-from services.embedding_service import EmbeddingServiceFactory
-from services.vector_store_factory import VectorStoreFactory
+from storage.messages import MessageStorage
+from bot.loaders.message_loader import MessageLoader
+from chunking.service import ChunkingService
+from storage.chunked_memory import ChunkedMemoryService
+from embedding.factory import EmbeddingServiceFactory
+from storage.vectors.factory import VectorStoreFactory
 from utils.discord_utils import format_discord_message
 import discord
 from discord.ext import commands

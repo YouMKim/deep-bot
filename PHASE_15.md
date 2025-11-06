@@ -354,9 +354,9 @@ Create `services/advanced_rag_service.py`:
 
 ```python
 from typing import List, Dict
-from services.query_optimizer import QueryOptimizer
-from services.reranking_service import RerankingService
-from services.hybrid_search_service import HybridSearchService
+from rag.query_optimizer import QueryOptimizer
+from retrieval.reranking import RerankingService
+from retrieval.hybrid import HybridSearchService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -508,12 +508,12 @@ class AdvancedRAGService:
 
 ## 5. Discord Commands
 
-### Update `cogs/rag_cog.py`
+### Update `bot/cogs/rag_cog.py`
 
 Add these commands:
 
 ```python
-from services.advanced_rag_service import AdvancedRAGService
+from rag.advanced import AdvancedRAGService
 
 class RAGCog(commands.Cog):
     def __init__(self, bot):

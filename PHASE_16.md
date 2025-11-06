@@ -62,8 +62,8 @@ Create `services/hyde_service.py`:
 ```python
 from typing import List, Dict
 from openai import OpenAI
-from services.embedding_service import EmbeddingService
-from services.vector_db_service import VectorDBService
+from embedding.factory import EmbeddingService
+from storage.vectors.service import VectorDBService
 import config
 import logging
 
@@ -296,8 +296,8 @@ Create `services/self_rag_service.py`:
 ```python
 from typing import List, Dict, Tuple
 from openai import OpenAI
-from services.vector_db_service import VectorDBService
-from services.embedding_service import EmbeddingService
+from storage.vectors.service import VectorDBService
+from embedding.factory import EmbeddingService
 import config
 import logging
 
@@ -652,9 +652,9 @@ Create `services/rag_fusion_service.py`:
 ```python
 from typing import List, Dict
 from openai import OpenAI
-from services.embedding_service import EmbeddingService
-from services.vector_db_service import VectorDBService
-from services.reranking_service import RerankingService
+from embedding.factory import EmbeddingService
+from storage.vectors.service import VectorDBService
+from retrieval.reranking import RerankingService
 import config
 import logging
 import asyncio
@@ -1055,7 +1055,7 @@ class AdaptiveRAGService:
 
 ## 6. Discord Commands
 
-Add to `cogs/advanced_rag_cog.py`:
+Add to `bot/cogs/advanced_rag_cog.py`:
 
 ```python
 @commands.command(name="hyde_search")

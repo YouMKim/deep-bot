@@ -15,10 +15,10 @@ Summary Enhancement
 
 #### Step 8.1: Enhance Summary Command
 
-Update `cogs/summary.py`:
+Update `bot/cogs/summary.py`:
 
 ```python
-from services.message_storage import MessageStorage
+from storage.messages import MessageStorage
 from config import Config
 
 async def _fetch_messages_with_fallback(self, ctx, count: int) -> List[dict]:

@@ -351,9 +351,9 @@ Learning: Combines:
 4. Constructive feedback generation
 """
 
-from services.argument_analyzer import ArgumentAnalyzer
-from services.rag_query_service import RAGQueryService
-from services.ai_service import AIService
+from ai.argument_analyzer import ArgumentAnalyzer
+from rag.pipeline import RAGQueryService
+from ai.service import AIService
 from typing import Dict, List
 from config import Config
 import logging
@@ -644,7 +644,7 @@ Rewrite the argument incorporating these improvements (keep it concise):"""
 
 ### Step 13.3: Add Debate Analysis Commands
 
-Add to `cogs/chatbot.py`:
+Add to `bot/cogs/chatbot.py`:
 
 ```python
 @commands.command(name='analyze_debate')
@@ -659,7 +659,7 @@ async def analyze_debate(self, ctx, *, statement: str):
     """
     try:
         async with ctx.typing():
-            from services.debate_analyzer_service import DebateAnalyzerService
+            from ai.debate_analyzer import DebateAnalyzerService
 
             debate_analyzer = DebateAnalyzerService(
                 self.conversational_rag.rag,
@@ -773,7 +773,7 @@ async def compare_arguments(self, ctx, *, arguments: str):
         arg2 = parts[1].strip()
 
         async with ctx.typing():
-            from services.debate_analyzer_service import DebateAnalyzerService
+            from ai.debate_analyzer import DebateAnalyzerService
 
             debate_analyzer = DebateAnalyzerService(
                 self.conversational_rag.rag,

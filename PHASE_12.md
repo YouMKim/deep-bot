@@ -327,10 +327,10 @@ Learning: This combines:
 3. LLM (generate in their style)
 """
 
-from services.user_style_analyzer import UserStyleAnalyzer
-from services.chunked_memory_service import ChunkedMemoryService
-from services.message_storage import MessageStorage
-from services.ai_service import AIService
+from ai.user_style_analyzer import UserStyleAnalyzer
+from storage.chunked_memory import ChunkedMemoryService
+from storage.messages import MessageStorage
+from ai.service import AIService
 from typing import Dict, Optional
 from config import Config
 import logging
@@ -538,7 +538,7 @@ class UserEmulationService:
 
 ### Step 12.3: Add Emulation Commands to Chatbot Cog
 
-Add to `cogs/chatbot.py`:
+Add to `bot/cogs/chatbot.py`:
 
 ```python
 @commands.command(name='emulate')
@@ -558,8 +558,8 @@ async def emulate(self, ctx, target_user: discord.Member, *, context: str):
 
         async with ctx.typing():
             # Initialize emulation service
-            from services.user_emulation_service import UserEmulationService
-            from services.message_storage import MessageStorage
+            from ai.user_emulation import UserEmulationService
+            from storage.messages import MessageStorage
 
             message_storage = MessageStorage()
             emulation_service = UserEmulationService(
@@ -624,8 +624,8 @@ async def analyze_user(self, ctx, target_user: discord.Member):
     Usage: !analyze_user @Alice
     """
     try:
-        from services.user_emulation_service import UserEmulationService
-        from services.message_storage import MessageStorage
+        from ai.user_emulation import UserEmulationService
+        from storage.messages import MessageStorage
 
         message_storage = MessageStorage()
         all_messages = message_storage.load_channel_messages(str(ctx.channel.id))
@@ -638,7 +638,7 @@ async def analyze_user(self, ctx, target_user: discord.Member):
             await ctx.send(f"Not enough messages from {target_user.display_name} to analyze.")
             return
 
-        from services.user_style_analyzer import UserStyleAnalyzer
+        from ai.user_style_analyzer import UserStyleAnalyzer
         analyzer = UserStyleAnalyzer()
         style = analyzer.analyze_user_style(user_messages)
 

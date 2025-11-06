@@ -387,7 +387,7 @@ Create `services/protected_rag_service.py`:
 
 ```python
 from typing import Dict, List
-from services.security_service import SecurityService, SecurityCheck
+from security.service import SecurityService, SecurityCheck
 import logging
 
 logger = logging.getLogger(__name__)
@@ -798,11 +798,11 @@ class SecurityAuditLog:
 
 ### Protected RAG Commands
 
-Add to `cogs/rag_cog.py`:
+Add to `bot/cogs/rag_cog.py`:
 
 ```python
-from services.protected_rag_service import ProtectedRAGService
-from services.security_service import SecurityService, RateLimiter, SecurityAuditLog
+from rag.protected import ProtectedRAGService
+from security.service import SecurityService, RateLimiter, SecurityAuditLog
 import discord
 from discord.ext import commands
 
@@ -972,7 +972,7 @@ Create `tests/test_security.py`:
 
 ```python
 import pytest
-from services.security_service import SecurityService
+from security.service import SecurityService
 
 def test_injection_detection():
     """Test prompt injection detection."""

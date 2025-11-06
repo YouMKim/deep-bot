@@ -512,7 +512,7 @@ class StrategyComparator:
 
 ### Step 6.5.4: Create Evaluation Bot Command
 
-Add to `cogs/admin.py`:
+Add to `bot/cogs/admin.py`:
 
 ```python
 @commands.command(name='evaluate_strategies')

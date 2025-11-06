@@ -16,11 +16,11 @@ Multi-Strategy Chunk Storage
 
 #### Step 6.1: Create ChunkedMemoryService
 
-Create `services/chunked_memory_service.py`:
+Create `storage/chunked_memory.py`:
 
 ```python
-from services.vector_store_base import VectorStore
-from services.embedding_service import EmbeddingProvider
+from storage.vectors.base import VectorStore
+from embedding.base import EmbeddingProvider
 from typing import List, Dict, Optional
 import logging
 

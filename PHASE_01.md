@@ -373,7 +373,7 @@ Create a test script `test_message_storage.py`:
 
 ```python
 import asyncio
-from services.message_storage import MessageStorage
+from storage.messages import MessageStorage
 from utils.discord_utils import format_discord_message
 
 def test_message_storage():

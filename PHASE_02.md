@@ -66,7 +66,7 @@ from typing import Callable, Optional, Dict, Any, List
 from datetime import datetime
 from discord import HTTPException
 from config import Config
-from services.message_storaage import MessageStorage
+from storage.messages import MessageStorage
 from utils.discord_utils import format_discord_message
 
 
@@ -369,8 +369,8 @@ class MessageLoader:
 Example of using MessageLoader with MessageStorage:
 
 ```python
-from services.message_loader import MessageLoader
-from services.message_storaage import MessageStorage
+from bot.loaders.message_loader import MessageLoader
+from storage.messages import MessageStorage
 
 # Initialize storage and loader
 storage = MessageStorage("data/raw_messages/messages.db")

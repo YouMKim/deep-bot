@@ -41,7 +41,7 @@ User Query
 
 ### Step 10.1: Create RAG Query Service
 
-Create `services/rag_query_service.py`:
+Create `rag/pipeline.py`:
 
 ```python
 """
@@ -51,8 +51,8 @@ Learning: This is the culmination of all previous phases.
 Brings together: chunking, embedding, retrieval, and generation.
 """
 
-from services.chunked_memory_service import ChunkedMemoryService
-from services.ai_service import AIService
+from storage.chunked_memory import ChunkedMemoryService
+from ai.service import AIService
 from typing import List, Dict, Optional
 from config import Config
 import logging
@@ -333,16 +333,16 @@ Answer:"""
 
 ### Step 10.2: Add RAG Query Bot Command
 
-Add to `cogs/admin.py` or create new `cogs/rag.py`:
+Add to `bot/cogs/admin.py` or create new `bot/cogs/rag.py`:
 
 ```python
 import discord
 from discord.ext import commands
-from services.rag_query_service import RAGQueryService
-from services.chunked_memory_service import ChunkedMemoryService
-from services.vector_store_factory import VectorStoreFactory
-from services.embedding_service import EmbeddingServiceFactory
-from services.ai_service import AIService
+from rag.pipeline import RAGQueryService
+from storage.chunked_memory import ChunkedMemoryService
+from storage.vectors.factory import VectorStoreFactory
+from embedding.factory import EmbeddingServiceFactory
+from ai.service import AIService
 from config import Config
 import logging
 
@@ -506,7 +506,7 @@ async def setup(bot):
 
 ### Step 10.3: Advanced: Query Optimization
 
-Create `services/query_optimizer.py` (optional, advanced):
+Create `rag/query_optimizer.py` (optional, advanced):
 
 ```python
 """
@@ -596,7 +596,7 @@ Variations (one per line):"""
 ### Programmatic Usage
 
 ```python
-from services.rag_query_service import RAGQueryService
+from rag.pipeline import RAGQueryService
 
 # Initialize
 rag = RAGQueryService(chunked_memory, ai_service)

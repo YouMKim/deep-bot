@@ -861,7 +861,7 @@ class StrategyRecommender:
 
 ### Comparison Commands
 
-Add to `cogs/comparison_cog.py`:
+Add to `bot/cogs/comparison_cog.py`:
 
 ```python
 import discord
