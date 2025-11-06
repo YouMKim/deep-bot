@@ -526,6 +526,8 @@ Update your RAG query service to use smart context building:
 ```python
 # In your rag/query_service.py or similar
 from rag.context_builder import SmartContextBuilder
+from storage.messages import MemoryService
+from ai.service import AIService
 
 class RAGQueryService:
     def __init__(self):

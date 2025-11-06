@@ -73,7 +73,7 @@ Tokens: 12,450
 └─────────────────────────────────┘
 ```
 
-Update `cogs/basic.py`:
+Update `bot/cogs/basic.py`:
 
 ```python
 @commands.command(name="mystats", help="View your AI usage stats with beautiful visualization")
@@ -185,7 +185,7 @@ def _get_user_tier(self, credit: float) -> str:
         return "🥉 Bronze Tier"
 ```
 
-Add to `services/user_ai_tracker.py`:
+Add to `ai/tracker.py`:
 
 ```python
 def get_user_rank(self, user_display_name: str) -> int:
@@ -552,7 +552,7 @@ class SmartCache:
 
 ### Step 7.5.4: Integrate Caching into Services
 
-**Update `services/memory_service.py`:**
+**Update `storage/messages.py` (vector storage integration):**
 
 ```python
 from utils.cache import SmartCache
@@ -615,7 +615,7 @@ class MemoryService:
             # ... rest of method unchanged ...
 ```
 
-**Update `services/ai_service.py`:**
+**Update `ai/service.py`:**
 
 ```python
 from utils.cache import SmartCache
@@ -687,14 +687,14 @@ class AIService:
 
 ### Step 7.5.5: Cache Management Commands
 
-Add to `cogs/admin.py`:
+Add to `bot/cogs/admin.py`:
 
 ```python
 @commands.command(name='cache_stats', help='View cache statistics')
 async def cache_stats(self, ctx):
     """Show cache performance statistics."""
-    from services.memory_service import MemoryService
-    from services.ai_service import AIService
+    from storage.messages import MemoryService
+    from ai.service import AIService
 
     # Get stats from services
     memory_service = MemoryService()
@@ -755,8 +755,8 @@ async def cache_stats(self, ctx):
 @commands.is_owner()
 async def clear_cache(self, ctx):
     """Clear all caches."""
-    from services.memory_service import MemoryService
-    from services.ai_service import AIService
+    from storage.messages import MemoryService
+    from ai.service import AIService
 
     memory_service = MemoryService()
     ai_service = AIService()
@@ -812,7 +812,7 @@ async def clear_cache(self, ctx):
 ```python
 # Test script: test_cache.py
 import asyncio
-from services.memory_service import MemoryService
+from storage.messages import MemoryService
 
 async def test_caching():
     service = MemoryService()

@@ -47,7 +47,7 @@ Leaderboards work because they tap into:
 
 ### Step 8.5.1: Multi-Category Leaderboards
 
-Update `services/user_ai_tracker.py` to support ranking:
+Update `ai/tracker.py` to support ranking:
 
 ```python
 """
@@ -250,7 +250,7 @@ class UserAITracker:
 
 ### Step 8.5.2: Leaderboard Commands
 
-Add to `cogs/basic.py`:
+Add to `bot/cogs/basic.py`:
 
 ```python
 @commands.command(name="leaderboard", aliases=['top', 'rankings', 'lb'])
@@ -435,7 +435,7 @@ Good bookmarking system needs:
 
 ### Step 8.5.3: Bookmark Database
 
-Create `data/bookmark_storage.py`:
+Create `storage/bookmarks.py`:
 
 ```python
 """
@@ -672,7 +672,7 @@ class BookmarkDatabase:
 
 ### Step 8.5.4: Bookmark Commands
 
-Create `cogs/bookmarks.py`:
+Create `bot/cogs/bookmarks.py`:
 
 ```python
 """
@@ -682,7 +682,7 @@ Bookmark commands for saving and organizing important messages.
 import discord
 from discord.ext import commands
 import logging
-from data.bookmark_storage import BookmarkDatabase
+from storage.bookmarks import BookmarkDatabase
 from typing import List
 
 logger = logging.getLogger(__name__)
