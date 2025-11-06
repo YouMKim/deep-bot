@@ -1,138 +1,170 @@
 # Refactoring Plan: Domain-Based Architecture 🏗️
 
-**Goal:** Reorganize codebase from flat `services/` structure to domain-based architecture for better maintainability and clarity.
+**Goal:** Reorganize codebase from flat `services/` structure to domain-based architecture, **while preserving the excellent `core/` AI abstraction that already exists**.
 
-**Estimated Time:** 2-3 hours
+**Estimated Time:** 1-2 hours (less than originally estimated!)
 
-**Risk Level:** Low (mostly file moves + import updates)
+**Risk Level:** Low (mostly file moves within `services/`, `core/` stays untouched)
 
 ---
 
-## Current Structure (Before)
+## ⚠️ IMPORTANT: Keep `core/` Unchanged!
+
+Your existing `core/` directory is **already well-architected** with:
+- ✅ Clean provider abstraction (`BaseAIProvider`)
+- ✅ Proper data models (`AIRequest`, `AIResponse`, `TokenUsage`, `CostDetails`)
+- ✅ Multiple provider support (OpenAI, Anthropic)
+- ✅ Cost tracking built-in
+
+**DO NOT MOVE OR MODIFY `core/`!** This refactoring is about reorganizing `services/` and `cogs/` only.
+
+---
+
+## Current Structure (Actual - After Review)
 
 ```
 deep-bot/
 ├── bot.py
 ├── config.py
-├── services/
-│   ├── message_storage.py        # Storage
-│   ├── memory_service.py         # RAG
+├── core/                         # ✅ KEEP AS IS - Already well-structured!
+│   ├── __init__.py
+│   ├── base_provider.py          # Abstract AI provider
+│   ├── ai_models.py              # Data models (AIRequest, AIResponse, etc.)
+│   └── providers/
+│       ├── openai_provider.py    # OpenAI implementation
+│       └── anthropic_provider.py # Anthropic implementation
+├── services/                      # ⚠️ NEEDS REORGANIZATION
+│   ├── ai_service.py             # Uses core/ providers
+│   ├── message_storage.py        # Storage layer
+│   ├── memory_service.py         # RAG memory
 │   ├── message_loader.py         # Data fetching
-│   ├── chunking_service.py       # RAG
-│   ├── embedding_service.py      # RAG
-│   ├── vector_store_base.py      # RAG
-│   ├── vector_store_chroma.py    # RAG
-│   ├── vector_store_factory.py   # RAG
-│   ├── chunked_memory_service.py # RAG
-│   └── ai_service.py             # AI/LLM
-├── cogs/
-│   ├── basic.py
+│   └── user_ai_tracker.py        # Usage tracking
+├── cogs/                          # ✅ Discord commands (move to bot/)
 │   ├── admin.py
-│   ├── summary.py
-│   └── ...
+│   ├── basic.py
+│   └── summary.py
 └── utils/
-    ├── discord_utils.py
     └── ...
 ```
 
-**Problems:**
-- ❌ All services mixed together (15+ files in one folder)
-- ❌ No clear separation between RAG, Discord, and AI concerns
-- ❌ Hard to see architectural boundaries
-- ❌ Difficult to navigate for new contributors
-- ❌ Testing boundaries unclear
+**What's good:**
+- ✅ `core/` has excellent AI abstraction (provider pattern, cost tracking, proper data models)
+- ✅ Clean separation between AI providers and application logic
+
+**What needs improvement:**
+- ⚠️ `services/` mixes storage, RAG, and bot concerns
+- ⚠️ No clear domain boundaries in `services/`
+- ⚠️ `cogs/` should be under `bot/` domain
 
 ---
 
-## New Structure (After)
+## New Structure (Revised Plan)
 
 ```
 deep-bot/
-├── bot.py                        # Main bot entry point
-├── config.py                     # Global configuration
+├── bot.py
+├── config.py
 │
-├── embedding/                    # 🆕 Embedding domain
-│   ├── __init__.py              # Exports: EmbeddingProvider, EmbeddingFactory
-│   ├── base.py                  # Abstract base class
-│   ├── sentence_transformer.py  # Local embeddings
-│   ├── openai.py               # OpenAI embeddings
-│   └── factory.py              # Factory pattern
-│
-├── chunking/                    # 🆕 Chunking domain
-│   ├── __init__.py             # Exports: ChunkingService, Chunk
-│   ├── base.py                 # Chunk data structure
-│   ├── service.py              # Main chunking service
-│   └── strategies/             # Strategy implementations
-│       ├── __init__.py
-│       ├── temporal.py         # Time-window chunking
-│       ├── conversation.py     # Conversation-gap chunking
-│       ├── token_aware.py      # Token-limit aware chunking
-│       └── sliding_window.py   # Sliding window chunking
-│
-├── retrieval/                   # 🆕 Vector retrieval domain
-│   ├── __init__.py             # Exports: VectorStore, VectorStoreFactory
-│   ├── base.py                 # Abstract base class
-│   ├── factory.py              # Factory pattern
-│   └── providers/              # Provider implementations
-│       ├── __init__.py
-│       ├── chroma.py          # ChromaDB adapter
-│       ├── pinecone.py        # Pinecone adapter (future)
-│       └── qdrant.py          # Qdrant adapter (future)
-│
-├── storage/                     # 🆕 Data persistence domain
-│   ├── __init__.py             # Exports: MessageStorage
-│   ├── message_storage.py      # SQLite storage
-│   └── checkpoint.py           # Checkpoint management (future split)
-│
-├── rag/                        # 🆕 RAG orchestration domain
-│   ├── __init__.py            # Exports: RAGService, RAGPipeline
-│   ├── pipeline.py            # Main RAG pipeline
-│   ├── memory_service.py      # Chunked memory service
-│   ├── reranking.py          # Reranking logic (Phase 15)
-│   ├── query_optimization.py  # Query expansion (Phase 15)
-│   └── strategies.py         # RAG strategies (Phase 16)
-│
-├── ai/                         # 🆕 AI/LLM domain
-│   ├── __init__.py            # Exports: AIService
-│   ├── service.py             # AI service abstraction
-│   ├── openai.py             # OpenAI implementation
-│   └── ollama.py             # Ollama implementation
-│
-├── security/                   # 🆕 Security domain
-│   ├── __init__.py            # Exports: SecurityService, RateLimiter
-│   ├── input_validator.py    # Input validation (Phase 3)
-│   ├── rate_limiter.py       # Rate limiting (Phase 3)
-│   ├── prompt_injection.py   # Prompt injection defense (Phase 18)
-│   └── audit_log.py          # Security audit logging (Phase 18)
-│
-├── bot/                        # 🆕 Discord bot domain
+├── core/                         # ✅ KEEP UNCHANGED - AI abstraction
 │   ├── __init__.py
-│   ├── cogs/                  # Discord cogs
+│   ├── base_provider.py
+│   ├── ai_models.py
+│   └── providers/
+│       ├── openai_provider.py
+│       └── anthropic_provider.py
+│
+├── ai/                           # 🆕 Application-level AI services
+│   ├── __init__.py
+│   ├── service.py                # AIService (from services/ai_service.py)
+│   └── tracker.py                # UserAITracker (from services/user_ai_tracker.py)
+│
+├── embedding/                    # 🆕 Embedding domain (Phase 3)
+│   ├── __init__.py
+│   ├── base.py
+│   ├── sentence_transformer.py
+│   ├── openai.py
+│   └── factory.py
+│
+├── chunking/                     # 🆕 Chunking domain (Phase 4)
+│   ├── __init__.py
+│   ├── base.py
+│   ├── service.py
+│   └── strategies/
+│
+├── retrieval/                    # 🆕 Vector retrieval domain (Phase 5)
+│   ├── __init__.py
+│   ├── base.py
+│   ├── factory.py
+│   └── providers/
+│       └── chroma.py
+│
+├── storage/                      # 🆕 Data persistence domain
+│   ├── __init__.py
+│   └── message_storage.py        # From services/
+│
+├── rag/                          # 🆕 RAG orchestration domain
+│   ├── __init__.py
+│   └── memory_service.py         # From services/
+│
+├── security/                     # 🆕 Security domain
+│   ├── __init__.py
+│   ├── input_validator.py
+│   ├── rate_limiter.py
+│   └── prompt_injection.py
+│
+├── bot/                          # 🆕 Discord bot domain
+│   ├── __init__.py
+│   ├── cogs/                     # From cogs/
 │   │   ├── __init__.py
-│   │   ├── basic.py
 │   │   ├── admin.py
-│   │   ├── summary.py
-│   │   ├── mvp_chatbot.py    # Phase 2 MVP
-│   │   └── ...
-│   ├── loaders/               # Data fetching
+│   │   ├── basic.py
+│   │   └── summary.py
+│   ├── loaders/
 │   │   ├── __init__.py
-│   │   └── message_loader.py
-│   └── utils/                 # Bot utilities
-│       ├── __init__.py
-│       ├── discord_utils.py
-│       └── formatting.py
+│   │   └── message_loader.py     # From services/
+│   └── utils/
+│       └── discord_utils.py
 │
-├── utils/                      # 🆕 General utilities (non-domain specific)
-│   ├── __init__.py
-│   ├── error_handler.py
-│   ├── secure_logger.py
-│   └── secrets_manager.py
-│
-└── data/                       # Data directories (unchanged)
-    ├── raw_messages/
-    ├── chroma/
+└── utils/                        # General utilities
     └── ...
 ```
+
+**Key Changes:**
+1. **Keep `core/` untouched** - It's already excellent!
+2. **Add `ai/`** - Application-level AI services (uses `core/`)
+3. **Reorganize `services/`** - Split by domain (storage, rag, bot)
+4. **Move `cogs/` → `bot/cogs/`** - Clear Discord bot boundary
+
+---
+
+## Revised Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Application Layers                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  bot/cogs/                                                   │
+│     └─> Uses ai/, rag/, storage/                            │
+│                                                               │
+│  ai/service.py                                               │
+│     └─> Uses core/providers/                                 │
+│                                                               │
+│  rag/memory_service.py                                       │
+│     └─> Uses embedding/, retrieval/, storage/                │
+│                                                               │
+│  core/providers/                                             │
+│     └─> Base AI abstraction (OpenAI, Anthropic)             │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Clean separation:**
+- `core/` = Base AI provider abstraction (multi-provider support)
+- `ai/` = Application-level AI services (summaries, generation)
+- `rag/` = RAG-specific logic (memory, retrieval)
+- `bot/` = Discord-specific code
+- `embedding/`, `chunking/`, `retrieval/` = RAG components
 
 ---
 
@@ -141,38 +173,62 @@ deep-bot/
 ### Step 1: Create New Directory Structure
 
 ```bash
-# Create new directories
+# Create new directories (core/ already exists - skip it!)
+mkdir -p ai
 mkdir -p embedding
 mkdir -p chunking/strategies
 mkdir -p retrieval/providers
 mkdir -p storage
 mkdir -p rag
-mkdir -p ai
 mkdir -p security
 mkdir -p bot/cogs bot/loaders bot/utils
-mkdir -p utils
 
 # Create __init__.py files
+touch ai/__init__.py
 touch embedding/__init__.py
 touch chunking/__init__.py chunking/strategies/__init__.py
 touch retrieval/__init__.py retrieval/providers/__init__.py
 touch storage/__init__.py
 touch rag/__init__.py
-touch ai/__init__.py
 touch security/__init__.py
 touch bot/__init__.py bot/cogs/__init__.py bot/loaders/__init__.py bot/utils/__init__.py
-touch utils/__init__.py
+
+# Note: Do NOT touch core/ - it already has __init__.py and is well-structured!
 ```
 
-### Step 2: Move Embedding Files
+### Step 2: Move Existing Services
 
-**Files to move:**
+**Current existing files to move:**
 ```bash
-# From services/embedding_service.py → Split into:
-services/embedding_service.py → embedding/base.py         (EmbeddingProvider)
-services/embedding_service.py → embedding/sentence_transformer.py  (SentenceTransformerEmbedder)
-services/embedding_service.py → embedding/openai.py       (OpenAIEmbedder)
-services/embedding_service.py → embedding/factory.py      (EmbeddingServiceFactory)
+# AI services
+services/ai_service.py → ai/service.py
+services/user_ai_tracker.py → ai/tracker.py
+
+# Storage
+services/message_storage.py → storage/message_storage.py
+
+# RAG
+services/memory_service.py → rag/memory_service.py
+
+# Bot
+services/message_loader.py → bot/loaders/message_loader.py
+cogs/*.py → bot/cogs/*.py
+```
+
+**Future files (created in later phases):**
+```bash
+# These don't exist yet - will be created in Phase 3+
+embedding/base.py         (Phase 3)
+embedding/sentence_transformer.py  (Phase 3)
+embedding/openai.py       (Phase 3)
+embedding/factory.py      (Phase 3)
+
+chunking/base.py          (Phase 4)
+chunking/service.py       (Phase 4)
+
+retrieval/base.py         (Phase 5)
+retrieval/providers/chroma.py (Phase 5)
+retrieval/factory.py      (Phase 5)
 ```
 
 **New `embedding/__init__.py`:**
@@ -399,25 +455,43 @@ utils/secrets_manager.py → utils/secrets_manager.py  (stays)
 ### Before (Old Imports)
 ```python
 # Old imports
+from services.ai_service import AIService
+from services.message_storage import MessageStorage
+from services.memory_service import MemoryService
+from services.message_loader import MessageLoader
+from services.user_ai_tracker import UserAITracker
+
+from cogs.admin import AdminCog
+from cogs.summary import SummaryCog
+
+# Future RAG imports (from phases not yet implemented)
 from services.embedding_service import EmbeddingServiceFactory
 from services.chunking_service import ChunkingService
 from services.vector_store_factory import VectorStoreFactory
-from services.message_storage import MessageStorage
 from services.chunked_memory_service import ChunkedMemoryService
-from services.ai_service import AIService
-from utils.discord_utils import format_discord_message
 ```
 
 ### After (New Imports)
 ```python
-# New imports - cleaner and more explicit
+# New imports - cleaner and domain-based
+from ai import AIService
+from ai.tracker import UserAITracker
+from storage import MessageStorage
+from rag import MemoryService
+from bot.loaders.message_loader import MessageLoader
+
+from bot.cogs.admin import AdminCog
+from bot.cogs.summary import SummaryCog
+
+# Future RAG imports (from phases not yet implemented)
 from embedding import EmbeddingFactory
 from chunking import ChunkingService
 from retrieval import VectorStoreFactory
-from storage import MessageStorage
 from rag import ChunkedMemoryService
-from ai import AIService
-from bot.utils.discord_utils import format_discord_message
+
+# Core AI providers (unchanged - already perfect!)
+from core import create_provider, AIConfig, AIRequest, AIResponse
+from core.providers import OpenAIProvider, AnthropicProvider
 ```
 
 ---

@@ -18,34 +18,44 @@ from pathlib import Path
 import re
 
 
-# Directories to create
+# Directories to create (NOT including core/ - it already exists and is perfect!)
 DIRECTORIES = [
-    "embedding",
-    "chunking/strategies",
-    "retrieval/providers",
+    "ai",  # Application-level AI services
+    "embedding",  # Phase 3+
+    "chunking/strategies",  # Phase 4+
+    "retrieval/providers",  # Phase 5+
     "storage",
     "rag",
-    "ai",
-    "security",
+    "security",  # Phase 3 & 18
     "bot/cogs",
     "bot/loaders",
     "bot/utils",
 ]
 
-# Import replacement map
+# Import replacement map (existing services/ only - no future RAG imports yet!)
 IMPORT_MAP = {
+    # Existing services
+    "from services.ai_service import": "from ai.service import",
+    "from services.user_ai_tracker import": "from ai.tracker import",
+    "from services.message_storage import": "from storage import",
+    "from services.memory_service import": "from rag import",
+    "from services.message_loader import": "from bot.loaders.message_loader import",
+
+    # Cogs
+    "from cogs.": "from bot.cogs.",
+
+    # Future RAG imports (for Phase documents)
     "from services.embedding_service import": "from embedding import",
     "from services.chunking_service import": "from chunking import",
     "from services.vector_store_factory import": "from retrieval import",
     "from services.vector_store_base import": "from retrieval.base import",
     "from services.vector_store_chroma import": "from retrieval.providers.chroma import",
-    "from services.message_storage import": "from storage import",
     "from services.chunked_memory_service import": "from rag import",
-    "from services.memory_service import": "from rag import",
-    "from services.ai_service import": "from ai import",
-    "from services.message_loader import": "from bot.loaders.message_loader import",
-    "from utils.discord_utils": "from bot.utils.discord_utils",
-    "from cogs.": "from bot.cogs.",
+
+    # Security (Phase 3 & 18)
+    "from utils.input_validator": "from security.input_validator",
+    "from utils.rate_limiter": "from security.rate_limiter",
+    "from utils.prompt_injection": "from security.prompt_injection",
 }
 
 
@@ -123,40 +133,41 @@ def show_next_steps():
     print("""
 After running this script, you need to manually:
 
-1. Split services/embedding_service.py into:
-   - embedding/base.py (EmbeddingProvider)
-   - embedding/sentence_transformer.py (SentenceTransformerEmbedder)
-   - embedding/openai.py (OpenAIEmbedder)
-   - embedding/factory.py (EmbeddingFactory)
+**IMPORTANT: DO NOT touch core/ - it's already well-structured!**
 
-2. Split services/chunking_service.py into:
-   - chunking/base.py (Chunk class)
-   - chunking/service.py (ChunkingService)
-   - chunking/strategies/* (individual strategies)
-
-3. Move these files:
-   - services/vector_store_base.py → retrieval/base.py
-   - services/vector_store_chroma.py → retrieval/providers/chroma.py
-   - services/vector_store_factory.py → retrieval/factory.py
-   - services/message_storage.py → storage/message_storage.py
-   - services/chunked_memory_service.py → rag/memory_service.py
+1. Move existing services:
    - services/ai_service.py → ai/service.py
+   - services/user_ai_tracker.py → ai/tracker.py
+   - services/message_storage.py → storage/message_storage.py
+   - services/memory_service.py → rag/memory_service.py
    - services/message_loader.py → bot/loaders/message_loader.py
 
-4. Move all cogs:
-   - cogs/* → bot/cogs/*
+2. Move cogs:
+   - cogs/admin.py → bot/cogs/admin.py
+   - cogs/basic.py → bot/cogs/basic.py
+   - cogs/summary.py → bot/cogs/summary.py
 
-5. Move Discord utilities:
-   - utils/discord_utils.py → bot/utils/discord_utils.py
+3. Move utilities:
+   - utils/discord_utils.py → bot/utils/discord_utils.py (if exists)
 
-6. Create __init__.py exports for each domain (see REFACTORING_PLAN.md)
+4. Create __init__.py exports for each domain:
+   - ai/__init__.py
+   - storage/__init__.py
+   - rag/__init__.py
+   - bot/__init__.py
 
-7. Test the bot:
+5. Future phases will create:
+   - embedding/* (Phase 3)
+   - chunking/* (Phase 4)
+   - retrieval/* (Phase 5)
+   - security/* (Phase 3 & 18)
+
+6. Test the bot:
    - python bot.py (check for import errors)
    - Test commands in Discord
    - Run pytest if you have tests
 
-8. Update documentation:
+7. Update documentation:
    - Review IMPLEMENTATION_GUIDE.md
    - Update README.md if needed
 
