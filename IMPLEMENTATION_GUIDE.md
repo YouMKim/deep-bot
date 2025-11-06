@@ -242,10 +242,13 @@ Choose your path based on your goals and experience:
 
 ### Milestone 4: RAG Query Pipeline (Phases 7-10)
 - ✅ Phase 7: Bot commands integration
+- 🆕 **Phase 7.5:** UX & Performance (Rich Embeds + Smart Caching) ⭐ QUICK WIN
 - ✅ Phase 8: Summary enhancement
+- 🆕 **Phase 8.5:** Engagement Features (Leaderboards + Bookmarking) ⭐ QUICK WIN
 - ✅ Phase 9: Configuration management
 - 🆕 Phase 10: Complete RAG query pipeline
-- **Goal:** Working end-to-end RAG chatbot
+- 🆕 **Phase 10.5:** Smart Context Building ⭐ GAME CHANGER
+- **Goal:** Production-quality RAG chatbot with 10x better responses
 
 ### Milestone 5: Advanced Chatbot Features (Phases 11-13) 🆕
 - 🆕 Phase 11: Conversational chatbot with memory

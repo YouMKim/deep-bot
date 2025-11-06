@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: deep-bot
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    volumes:
+      # Persist data between restarts
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+    environment:
+      # Override environment if needed
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DEBUG_MODE=${DEBUG_MODE:-False}
+
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Network configuration
+    networks:
+      - bot-network
+
+# Optional: Add web dashboard (if implemented)
+#  dashboard:
+#    build:
+#      context: ./web
+#      dockerfile: Dockerfile
+#    container_name: deep-bot-dashboard
+#    restart: unless-stopped
+#    ports:
+#      - "8080:8080"
+#    environment:
+#      - BOT_API_URL=http://bot:5000
+#    depends_on:
+#      - bot
+#    networks:
+#      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
+
+volumes:
+  bot-data:
+  bot-logs:

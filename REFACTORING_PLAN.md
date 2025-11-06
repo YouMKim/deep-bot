@@ -68,6 +68,11 @@ deep-bot/
 deep-bot/
 ├── bot.py                        # Main entry point
 ├── config.py                     # Global configuration
+├── requirements.txt              # Python dependencies
+│
+├── Dockerfile                    # 🐳 Production Docker image
+├── docker-compose.yml            # Docker Compose for local dev + production
+├── .dockerignore                 # Exclude from Docker image
 │
 ├── ai/                           # 🔀 AI/Generation domain (core/ + services/ai merged)
 │   ├── __init__.py              # Exports: AIService, AIRequest, AIResponse, providers, etc.
@@ -147,6 +152,37 @@ deep-bot/
 │   ├── rate_limiter.py         # Rate limiting
 │   ├── prompt_injection.py     # Prompt injection defense
 │   └── audit_log.py            # Security audit logging
+│
+├── deployment/                   # 🚀 Deployment & infrastructure
+│   ├── railway/
+│   │   ├── railway.json         # Railway platform config
+│   │   └── README.md
+│   ├── render/
+│   │   ├── render.yaml          # Render platform config
+│   │   └── README.md
+│   ├── aws/
+│   │   ├── ecs-task-definition.json
+│   │   ├── cloudformation.yaml
+│   │   └── README.md
+│   ├── gcp/
+│   │   ├── cloud-run.yaml
+│   │   └── README.md
+│   ├── azure/
+│   │   └── README.md
+│   ├── kubernetes/
+│   │   ├── deployment.yaml
+│   │   ├── service.yaml
+│   │   └── configmap.yaml
+│   └── scripts/
+│       ├── deploy.sh            # Automated deployment
+│       ├── backup.sh            # Data backup
+│       ├── restore.sh           # Data restore
+│       └── health-check.sh      # Health monitoring
+│
+├── monitoring/                   # 📊 Monitoring & observability
+│   ├── prometheus.yml
+│   ├── grafana-dashboard.json
+│   └── alerts.yml
 │
 ├── bot/                          # 🤖 Discord bot domain
 │   ├── __init__.py

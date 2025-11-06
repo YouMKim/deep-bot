@@ -50,17 +50,35 @@ This implementation is split into 9 phases, each building on the previous one. E
    - Async progress reporting
    - Error handling
 
-8. **[Phase 8: Summary Enhancement](./PHASE_08.md)**
+8. **[Phase 7.5: UX & Performance Optimization](./PHASE_07_5.md)** ⭐ QUICK WIN
+   - Rich Discord embeds
+   - Visual progress bars & rankings
+   - Smart caching system (50-80% cost reduction)
+   - Performance metrics
+
+9. **[Phase 8: Summary Enhancement](./PHASE_08.md)**
    - Caching patterns
    - Performance optimization
    - Graceful degradation
    - DB-first approach
 
-9. **[Phase 9: Configuration & Polish](./PHASE_09.md)**
+10. **[Phase 8.5: Engagement Features](./PHASE_08_5.md)** ⭐ QUICK WIN
+   - Leaderboard system
+   - User rankings & comparisons
+   - Message bookmarking
+   - Tag-based organization
+
+11. **[Phase 9: Configuration & Polish](./PHASE_09.md)**
    - Configuration management
    - Feature flags
    - Validation patterns
    - Environment variables
+
+12. **[Phase 10.5: Smart Context Building](./PHASE_10_5.md)** ⭐ GAME CHANGER
+   - Conversation threading
+   - Temporal coherence
+   - Intelligent deduplication
+   - 10x better RAG responses
 
 ## Common Resources
 
