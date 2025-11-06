@@ -13,7 +13,7 @@ import pytest
 import os
 import tempfile
 import shutil
-from services.user_ai_tracker import UserAITracker
+from ai.tracker import UserAITracker
 
 
 @pytest.fixture

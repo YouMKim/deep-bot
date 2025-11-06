@@ -83,17 +83,17 @@ class DeepBot(commands.Bot):
         
         # Load cogs
         try:
-            await self.load_extension("cogs.basic")
+            await self.load_extension("bot.cogs.basic")
             logger.info("Loaded basic cog")
         except Exception as e:
             logger.error(f"Failed to load basic cog: {e}")
         try:
-            await self.load_extension("cogs.summary")
+            await self.load_extension("bot.cogs.summary")
             logger.info("Loaded summary cog")
         except Exception as e:
             logger.error(f"Failed to load summary cog: {e}")
         try:
-            await self.load_extension("cogs.admin")
+            await self.load_extension("bot.cogs.admin")
             logger.info("Loaded admin cog")
         except Exception as e:
             logger.error(f"Failed to load admin cog: {e}")

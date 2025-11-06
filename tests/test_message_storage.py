@@ -14,7 +14,7 @@ import os
 import tempfile
 import shutil
 from datetime import datetime
-from services.message_storaage import MessageStorage
+from storage.messages import MessageStorage
 
 
 @pytest.fixture
