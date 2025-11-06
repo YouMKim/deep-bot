@@ -307,6 +307,76 @@ See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete deployment instruc
 
 ---
 
+## 🏗️ Project Architecture
+
+### Folder Structure
+
+This project uses a **domain-based architecture** for better organization and maintainability:
+
+```
+deep-bot/
+├── embedding/              # Text → vector embeddings
+│   ├── base.py
+│   ├── sentence_transformer.py
+│   ├── openai.py
+│   └── factory.py
+│
+├── chunking/              # Message chunking strategies
+│   ├── base.py
+│   ├── service.py
+│   └── strategies/
+│
+├── retrieval/             # Vector storage & search
+│   ├── base.py
+│   ├── factory.py
+│   └── providers/
+│       └── chroma.py
+│
+├── storage/               # Data persistence
+│   └── message_storage.py
+│
+├── rag/                   # RAG orchestration
+│   ├── memory_service.py
+│   └── pipeline.py
+│
+├── ai/                    # LLM abstraction
+│   └── service.py
+│
+├── security/              # Security layer
+│   ├── input_validator.py
+│   ├── rate_limiter.py
+│   └── prompt_injection.py
+│
+├── bot/                   # Discord bot
+│   ├── cogs/
+│   ├── loaders/
+│   └── utils/
+│
+└── utils/                 # General utilities
+    └── ...
+```
+
+**Why this structure?**
+- ✅ Clear separation of concerns (RAG vs Bot vs Security)
+- ✅ Easy to navigate ("Where's embedding code?" → `embedding/`)
+- ✅ Scales well (add new provider → `retrieval/providers/new.py`)
+- ✅ Testing boundaries explicit
+- ✅ Team-friendly for collaboration
+
+**Import style:**
+```python
+# Clean, domain-based imports
+from embedding import EmbeddingFactory
+from chunking import ChunkingService
+from retrieval import VectorStoreFactory
+from storage import MessageStorage
+from rag import ChunkedMemoryService
+```
+
+**Need to refactor?** See [REFACTORING_PLAN.md](./REFACTORING_PLAN.md) for migration guide.
+
+---
+
 ## Phase 1: Foundation - Message Storage Abstraction
 
 ### Learning Objectives
@@ -326,7 +396,7 @@ See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete deployment instruc
 
 #### Step 1.1: Design Database Schema
 
-Create `services/message_storage.py` and design the schema:
+Create `storage/message_storage.py` and design the schema:
 
 ```python
 # Schema design considerations:
@@ -856,7 +926,7 @@ MESSAGE_FETCH_MAX_RETRIES: int = int(os.getenv("MESSAGE_FETCH_MAX_RETRIES", "5")
 
 #### Step 2.2: Enhance MessageLoader with Rate Limiting
 
-Modify `services/message_loader.py`:
+Modify `bot/loaders/message_loader.py`:
 
 ```python
 import asyncio
@@ -865,8 +935,8 @@ from datetime import datetime
 from typing import Callable, Optional, Dict, Any
 from discord import HTTPException
 from config import Config
-from services.memory_service import MemoryService
-from utils.discord_utils import format_discord_message
+from rag import MemoryService
+from bot.utils.discord_utils import format_discord_message
 
 class MessageLoader:
     def __init__(self, memory_service: MemoryService = None):
@@ -1108,7 +1178,7 @@ async def test_rate_limiting():
 
 #### Step 3.1: Create Abstract Base Class
 
-Create `services/embedding_service.py`:
+Create `embedding/base.py`:
 
 ```python
 from abc import ABC, abstractmethod
@@ -1158,7 +1228,10 @@ class EmbeddingProvider(ABC):
 
 #### Step 3.2: Implement SentenceTransformer Provider
 
+Create `embedding/sentence_transformer.py`:
+
 ```python
+from embedding.base import EmbeddingProvider
 from sentence_transformers import SentenceTransformer
 import logging
 
@@ -1202,7 +1275,10 @@ class SentenceTransformerEmbedder(EmbeddingProvider):
 
 #### Step 3.3: Implement OpenAI Provider
 
+Create `embedding/openai.py`:
+
 ```python
+from embedding.base import EmbeddingProvider
 import openai
 from typing import List
 import logging
@@ -1277,11 +1353,16 @@ class OpenAIEmbedder(EmbeddingProvider):
 
 #### Step 3.4: Create Factory
 
+Create `embedding/factory.py`:
+
 ```python
 from typing import Optional
 from config import Config
+from embedding.base import EmbeddingProvider
+from embedding.sentence_transformer import SentenceTransformerEmbedder
+from embedding.openai import OpenAIEmbedder
 
-class EmbeddingServiceFactory:
+class EmbeddingFactory:
     """
     Factory for creating embedding providers.
     
@@ -1351,7 +1432,7 @@ class EmbeddingServiceFactory:
 
 #### Step 4.1: Design Chunk Data Structure
 
-Create `services/chunking_service.py`:
+Create `chunking/base.py` for the Chunk class and `chunking/service.py` for ChunkingService:
 
 ```python
 from typing import List, Dict, Optional
@@ -1633,7 +1714,7 @@ def chunk_messages(
 
 #### Step 5.1: Create Abstract Base Class
 
-Create `services/vector_store_base.py`:
+Create `retrieval/base.py`:
 
 ```python
 from abc import ABC, abstractmethod
@@ -1706,10 +1787,10 @@ class VectorStore(ABC):
 
 #### Step 5.2: Implement ChromaDB Adapter
 
-Create `services/vector_store_chroma.py`:
+Create `retrieval/providers/chroma.py`:
 
 ```python
-from services.vector_store_base import VectorStore
+from retrieval.base import VectorStore
 from data.chroma_client import chroma_client
 from typing import List, Dict
 import logging
@@ -1791,13 +1872,13 @@ class ChromaVectorStore(VectorStore):
 
 #### Step 5.3: Create Factory
 
-Create `services/vector_store_factory.py`:
+Create `retrieval/factory.py`:
 
 ```python
 from typing import Optional
 from config import Config
-from services.vector_store_base import VectorStore
-from services.vector_store_chroma import ChromaVectorStore
+from retrieval.base import VectorStore
+from retrieval.providers.chroma import ChromaVectorStore
 
 class VectorStoreFactory:
     """Factory for creating vector store instances"""
@@ -1848,11 +1929,11 @@ class VectorStoreFactory:
 
 #### Step 6.1: Create ChunkedMemoryService
 
-Create `services/chunked_memory_service.py`:
+Create `rag/memory_service.py`:
 
 ```python
-from services.vector_store_base import VectorStore
-from services.embedding_service import EmbeddingProvider
+from retrieval.base import VectorStore
+from embedding.base import EmbeddingProvider
 from typing import List, Dict, Optional
 import logging
 
@@ -2001,16 +2082,16 @@ class ChunkedMemoryService:
 
 #### Step 7.1: Add Chunk Channel Command
 
-Update `cogs/admin.py`:
+Update `bot/cogs/admin.py`:
 
 ```python
-from services.message_storage import MessageStorage
-from services.message_loader import MessageLoader
-from services.chunking_service import ChunkingService
-from services.chunked_memory_service import ChunkedMemoryService
-from services.embedding_service import EmbeddingServiceFactory
-from services.vector_store_factory import VectorStoreFactory
-from utils.discord_utils import format_discord_message
+from storage import MessageStorage
+from bot.loaders.message_loader import MessageLoader
+from chunking import ChunkingService
+from rag import ChunkedMemoryService
+from embedding import EmbeddingFactory
+from retrieval import VectorStoreFactory
+from bot.utils.discord_utils import format_discord_message
 import discord
 from discord.ext import commands
 from config import Config
@@ -2227,10 +2308,10 @@ async def chunk_checkpoint(self, ctx, channel_id: str = None):
 
 #### Step 8.1: Enhance Summary Command
 
-Update `cogs/summary.py`:
+Update `bot/cogs/summary.py`:
 
 ```python
-from services.message_storage import MessageStorage
+from storage import MessageStorage
 from config import Config
 
 async def _fetch_messages_with_fallback(self, ctx, count: int) -> List[dict]:
