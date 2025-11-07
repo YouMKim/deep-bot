@@ -21,8 +21,13 @@ pytest>=7.4.0
 pytest-asyncio>=0.21.0
 pytest-mock>=3.11.0
 
+#embedding and vector database
 chromadb>=0.4.15
 sentence-transformers>=2.2.2
 
+#chunking and tokenization
+tiktoken>=0.5.0
+
 # Code formatting
 black>=23.0.0
+

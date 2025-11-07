@@ -32,7 +32,7 @@ class Config:
     TEST_MODE: bool = os.getenv("TEST_MODE", "False").lower() == "true"
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     
-    # Message Loading Settings
+    # Blacklist from AI usage
     BLACKLIST_IDS: list = []
 
     #Discord Message rate limits
@@ -41,6 +41,14 @@ class Config:
     MESSAGE_FETCH_PROGRESS_INTERVAL: int = int(os.getenv("MESSAGE_FETCH_PROGRESS_INTERVAL", "100"))
     MESSAGE_FETCH_MAX_RETRIES: int = int(os.getenv("MESSAGE_FETCH_MAX_RETRIES", "5"))
     
+    #Chunking Configuration
+    CHUNKING_TEMPORAL_WINDOW: int = int(os.getenv("CHUNKING_TEMPORAL_WINDOW", "3600"))  # 1 hour in seconds
+    CHUNKING_CONVERSATION_GAP: int = int(os.getenv("CHUNKING_CONVERSATION_GAP", "1800"))  # 30 minutes
+    CHUNKING_WINDOW_SIZE: int = int(os.getenv("CHUNKING_WINDOW_SIZE", "10"))  # messages per window
+    CHUNKING_OVERLAP: int = int(os.getenv("CHUNKING_OVERLAP", "2"))  # overlapping messages
+    CHUNKING_MAX_TOKENS: int = int(os.getenv("CHUNKING_MAX_TOKENS", "512"))  # max tokens per chunk
+    CHUNKING_MIN_CHUNK_SIZE: int = int(os.getenv("CHUNKING_MIN_CHUNK_SIZE", "3"))  # min messages per chunk
+
     @classmethod
     def load_blacklist(cls):
         """Load blacklisted user IDs from environment variable."""
