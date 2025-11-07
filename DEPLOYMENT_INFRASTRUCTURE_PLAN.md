@@ -542,6 +542,47 @@ jobs:
 
 ## 📊 Monitoring & Logging
 
+> **💡 Production Automation**: For complete background task automation (auto-sync, health checks, event listeners), see **[Phase 19: Production Automation & Background Tasks](./PHASE_19.md)**.
+> This section covers monitoring infrastructure; Phase 19 covers automated operations.
+
+### Background Task Automation (Phase 19)
+
+Before diving into monitoring infrastructure, ensure you've implemented the automated background tasks from **Phase 19**:
+
+- **Auto-Sync Task** - Automatically syncs vector DBs every 30 minutes (no manual intervention!)
+- **Message Listener** - Captures Discord messages in real-time as they're posted
+- **Health Monitor** - Runs health checks every 5 minutes and alerts on failures
+- **Resource Monitor** - Tracks CPU, memory, disk usage
+
+These tasks ensure your bot runs autonomously in the cloud with minimal manual intervention.
+
+**Quick Setup:**
+```python
+# In bot.py - these cogs are loaded automatically
+background_cogs = [
+    'bot.tasks.auto_sync',              # Phase 19.1
+    'bot.listeners.message_listener',   # Phase 19.2
+    'bot.tasks.health_monitor',         # Phase 19.3
+]
+```
+
+**Configuration (`.env`):**
+```bash
+# Background task intervals (Phase 19)
+AUTO_SYNC_INTERVAL_MINUTES=30         # How often to sync vector DBs
+AUTO_SYNC_STRATEGIES=temporal,conversation  # Which strategies to auto-sync
+HEALTH_CHECK_INTERVAL_MINUTES=5       # How often to run health checks
+```
+
+**Production Benefits:**
+- ✅ Zero manual intervention after deployment
+- ✅ Real-time message processing (no lag)
+- ✅ Automatic recovery from transient failures
+- ✅ Self-monitoring with health checks
+- ✅ Efficient incremental updates (Phase 6.8 checkpoints)
+
+---
+
 ### 1. Application Logging
 
 Update `bot.py` with structured logging:
