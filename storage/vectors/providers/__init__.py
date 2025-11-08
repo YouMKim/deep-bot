@@ -1,5 +1,5 @@
 # Vector storage providers - For Phase 5
-from .chroma import ChromaClient, chroma_client
+from .chroma import ChromaVectorStorage
 
-__all__ = ["ChromaClient", "chroma_client"]
+__all__ = ["ChromaVectorStorage"]
 

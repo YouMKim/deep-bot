@@ -1,61 +1,129 @@
-import chromadb
+from storage.vectors.base import VectorStorage
+from data.chroma_client import chroma_client
+from typing import List, Dict, Optional
 import logging
-from pathlib import Path
 
 
-class ChromaClient:
-
-    _instance = None
-    _client = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(ChromaClient, cls).__new__(cls)
-        return cls._instance
+class ChromaVectorStorage(VectorStorage):
 
     def __init__(self):
-        if self._client is None:
-            self._setup_client()
+        self.logger = logging.getLogger(__name__)
+        self.client = chroma_client.client
 
-    def _setup_client(self):
+    def create_collection(self, collection_name: str) -> None:
         try:
-            data_dir = Path("data")
-            data_dir.mkdir(exist_ok=True)
-            self._client = chromadb.PersistentClient(path="data/chroma_db")
-            self.logger = logging.getLogger(__name__)
-            self.logger.info("ChromaDB client initialized successfully")
-
+            self.client.get_or_create_collection(collection_name)
+            self.logger.info(f"Created collection: {collection_name}")
         except Exception as e:
-            self.logger.error(f"Failed to initialize ChromaDB client: {e}")
+            self.logger.error(f"Failed to create collection '{collection_name}': {e}")
             raise
-
-    @property
-    def client(self):
-        return self._client
-
-    def get_collection(self, name: str):
+    
+    def get_collection(self, collection_name: str):
         try:
-            return self._client.get_or_create_collection(name)
+            return self.client.get_collection(collection_name)
+        except Exception:
+
+            return self.client.get_or_create_collection(collection_name)
+    
+    def add_documents(
+        self,
+        collection_name: str,
+        documents: List[str],
+        embeddings: List[List[float]],
+        metadatas: List[Dict],
+        ids: List[str]
+    ):
+        try:
+            collection = self.get_collection(collection_name)
+            collection.add(
+                documents=documents,
+                embeddings=embeddings,
+                metadatas=metadatas,
+                ids=ids
+            )
         except Exception as e:
-            self.logger.error(f"Failed to get collection '{name}': {e}")
+            self.logger.error(
+                f"Failed to add documents to collection '{collection_name}': {e}"
+            )
             raise
-
-    def list_collections(self):
+    
+    def query(
+        self,
+        collection_name: str,
+        query_embeddings: List[List[float]],
+        n_results: int,
+        where: Optional[Dict] = None
+    ) -> Dict:
+        """
+        Query collection by similarity.
+        
+        Args:
+            collection_name: Name of the collection to query
+            query_embeddings: List of query embedding vectors
+            n_results: Number of results to return
+            where: Optional metadata filter dictionary
+            
+        Returns:
+            Dictionary with 'documents', 'metadatas', 'distances', and 'ids'
+        """
         try:
-            return self._client.list_collections()
+            collection = self.get_collection(collection_name)
+            results = collection.query(
+                query_embeddings=query_embeddings,
+                n_results=n_results,
+                where=where
+            )
+            return results
+        except Exception as e:
+            self.logger.error(
+                f"Failed to query collection '{collection_name}': {e}"
+            )
+            raise
+    
+    def get_collection_count(self, collection_name: str) -> int:
+        try:
+            collection = self.get_collection(collection_name)
+            return collection.count()
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to get count for collection '{collection_name}': {e}"
+            )
+            return 0
+    
+    def list_collections(self) -> List[str]:
+        try:
+            return [col.name for col in self.client.list_collections()]
         except Exception as e:
             self.logger.error(f"Failed to list collections: {e}")
             return []
-
-    def delete_collection(self, name: str):
+    
+    def delete_collection(self, collection_name: str) -> None:
         try:
-            self._client.delete_collection(name)
-            self.logger.info(f"Deleted collection '{name}'")
+            self.client.delete_collection(collection_name)
+            self.logger.info(f"Deleted collection: {collection_name}")
         except Exception as e:
-            self.logger.error(f"Failed to delete collection '{name}': {e}")
+            self.logger.error(
+                f"Failed to delete collection '{collection_name}': {e}"
+            )
             raise
+    
+    def delete_documents(
+        self,
+        collection_name: str,
+        ids: List[str],
+    ) -> None:
 
-
-# Global instance
-chroma_client = ChromaClient()
-
+        if not ids:
+            self.logger.warning("No IDs provided for deletion")
+            return
+        try:
+            collection = self.get_collection(collection_name)
+            collection.delete(ids=ids)
+            self.logger.info(
+                f"Deleted {len(ids)} document(s) from collection '{collection_name}'"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Failed to delete documents from collection '{collection_name}': {e}"
+            )
+            raise

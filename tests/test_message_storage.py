@@ -237,6 +237,189 @@ class TestMessageStorage:
         assert checkpoint['last_message_id'] == '125'
 
 
+class TestNewCheckpointMethods:
+    """Test suite for new checkpoint methods"""
+    
+    def test_get_recent_messages(self, temp_db, sample_messages):
+        """Test getting N most recent messages in chronological order"""
+        channel_id = 'test_channel'
+        
+        # Add more messages to test limit
+        extra_messages = [
+            {
+                'id': '126',
+                'content': 'Fourth message',
+                'author_id': '456',
+                'author': 'TestUser',
+                'author_display_name': 'TestUser',
+                'timestamp': '2024-01-01T00:03:00Z',
+                'created_at': '2024-01-01T00:03:00Z',
+                'channel_name': 'test-channel',
+                'guild_name': 'Test Guild',
+                'guild_id': '789',
+                'is_bot': False,
+                'has_attachments': False,
+                'message_type': 'default',
+                'metadata': {}
+            },
+            {
+                'id': '127',
+                'content': 'Fifth message',
+                'author_id': '456',
+                'author': 'TestUser',
+                'author_display_name': 'TestUser',
+                'timestamp': '2024-01-01T00:04:00Z',
+                'created_at': '2024-01-01T00:04:00Z',
+                'channel_name': 'test-channel',
+                'guild_name': 'Test Guild',
+                'guild_id': '789',
+                'is_bot': False,
+                'has_attachments': False,
+                'message_type': 'default',
+                'metadata': {}
+            }
+        ]
+        
+        temp_db.save_channel_messages(channel_id, sample_messages + extra_messages)
+        
+        # Get 3 most recent messages
+        recent = temp_db.get_recent_messages(channel_id, 3)
+        
+        assert len(recent) == 3
+        # Should be in chronological order (oldest to newest of the recent 3)
+        assert recent[0]['message_id'] == '125'  # 3rd oldest overall
+        assert recent[1]['message_id'] == '126'  # 2nd newest
+        assert recent[2]['message_id'] == '127'  # newest
+    
+    def test_get_recent_messages_with_limit_greater_than_total(self, temp_db, sample_messages):
+        """Test getting recent messages when limit exceeds total messages"""
+        channel_id = 'test_channel'
+        temp_db.save_channel_messages(channel_id, sample_messages)
+        
+        # Request more messages than exist
+        recent = temp_db.get_recent_messages(channel_id, 100)
+        
+        # Should return all 3 messages
+        assert len(recent) == 3
+        assert recent[0]['message_id'] == '123'
+        assert recent[2]['message_id'] == '125'
+    
+    def test_get_messages_after(self, temp_db, sample_messages):
+        """Test getting messages after a specific message ID"""
+        channel_id = 'test_channel'
+        temp_db.save_channel_messages(channel_id, sample_messages)
+        
+        # Get messages after the first message
+        after = temp_db.get_messages_after(channel_id, '123', limit=10)
+        
+        assert len(after) == 2
+        assert after[0]['message_id'] == '124'
+        assert after[1]['message_id'] == '125'
+    
+    def test_get_messages_after_with_limit(self, temp_db, sample_messages):
+        """Test getting messages after with a limit"""
+        channel_id = 'test_channel'
+        temp_db.save_channel_messages(channel_id, sample_messages)
+        
+        # Get only 1 message after the first
+        after = temp_db.get_messages_after(channel_id, '123', limit=1)
+        
+        assert len(after) == 1
+        assert after[0]['message_id'] == '124'
+    
+    def test_get_messages_after_nonexistent_id(self, temp_db, sample_messages):
+        """Test getting messages after a non-existent message ID"""
+        channel_id = 'test_channel'
+        temp_db.save_channel_messages(channel_id, sample_messages)
+        
+        # Try to get messages after non-existent ID
+        after = temp_db.get_messages_after(channel_id, '999', limit=10)
+        
+        # Should return empty list
+        assert len(after) == 0
+    
+    def test_get_messages_after_last_message(self, temp_db, sample_messages):
+        """Test getting messages after the last message"""
+        channel_id = 'test_channel'
+        temp_db.save_channel_messages(channel_id, sample_messages)
+        
+        # Get messages after the last message
+        after = temp_db.get_messages_after(channel_id, '125', limit=10)
+        
+        # Should return empty list
+        assert len(after) == 0
+    
+    def test_chunking_checkpoint_crud(self, temp_db):
+        """Test chunking checkpoint create, read, update operations"""
+        channel_id = 'test_channel'
+        strategy = 'temporal'
+        
+        # Initially no checkpoint
+        checkpoint = temp_db.get_chunking_checkpoint(channel_id, strategy)
+        assert checkpoint is None
+        
+        # Create checkpoint
+        temp_db.update_chunking_checkpoint(
+            channel_id=channel_id,
+            strategy=strategy,
+            last_chunk_id='chunk_123',
+            last_message_id='msg_456',
+            last_timestamp='2024-01-01T00:00:00Z'
+        )
+        
+        # Retrieve checkpoint
+        checkpoint = temp_db.get_chunking_checkpoint(channel_id, strategy)
+        assert checkpoint is not None
+        assert checkpoint['last_chunk_id'] == 'chunk_123'
+        assert checkpoint['last_message_id'] == 'msg_456'
+        assert checkpoint['last_message_timestamp'] == '2024-01-01T00:00:00Z'
+        assert 'updated_at' in checkpoint
+        
+        # Update checkpoint
+        temp_db.update_chunking_checkpoint(
+            channel_id=channel_id,
+            strategy=strategy,
+            last_chunk_id='chunk_789',
+            last_message_id='msg_999',
+            last_timestamp='2024-01-01T00:05:00Z'
+        )
+        
+        # Verify update
+        checkpoint = temp_db.get_chunking_checkpoint(channel_id, strategy)
+        assert checkpoint['last_chunk_id'] == 'chunk_789'
+        assert checkpoint['last_message_id'] == 'msg_999'
+        assert checkpoint['last_message_timestamp'] == '2024-01-01T00:05:00Z'
+    
+    def test_chunking_checkpoint_multiple_strategies(self, temp_db):
+        """Test checkpoints for multiple strategies on same channel"""
+        channel_id = 'test_channel'
+        
+        # Create checkpoints for different strategies
+        temp_db.update_chunking_checkpoint(
+            channel_id=channel_id,
+            strategy='temporal',
+            last_chunk_id='chunk_t_1',
+            last_message_id='msg_100',
+            last_timestamp='2024-01-01T00:00:00Z'
+        )
+        
+        temp_db.update_chunking_checkpoint(
+            channel_id=channel_id,
+            strategy='author',
+            last_chunk_id='chunk_a_1',
+            last_message_id='msg_200',
+            last_timestamp='2024-01-01T00:10:00Z'
+        )
+        
+        # Retrieve each checkpoint
+        temporal_cp = temp_db.get_chunking_checkpoint(channel_id, 'temporal')
+        author_cp = temp_db.get_chunking_checkpoint(channel_id, 'author')
+        
+        # Verify they're independent
+        assert temporal_cp['last_message_id'] == 'msg_100'
+        assert author_cp['last_message_id'] == 'msg_200'
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

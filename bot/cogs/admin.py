@@ -265,6 +265,84 @@ class Admin(commands.Cog):
             
             await status_msg.edit(content="", embed=embed)
             
+            # Stage 2: Trigger chunking and vector storage in background
+            if stats['successfully_loaded'] > 0:
+                await ctx.send("🔄 Starting chunking and embedding process...")
+                
+                # Create background task for chunking
+                async def chunk_in_background():
+                    try:
+                        from storage.chunked_memory import ChunkedMemoryService
+                        chunked_service = ChunkedMemoryService()
+                        
+                        # Progress callback for chunking
+                        chunking_status_msg = None
+                        
+                        async def chunking_progress_callback(progress):
+                            nonlocal chunking_status_msg
+                            try:
+                                msg = (
+                                    f"🔄 Chunking {progress['strategy']}: "
+                                    f"{progress['total_processed']} messages processed, "
+                                    f"{progress['chunks_created']} chunks created"
+                                )
+                                if chunking_status_msg:
+                                    await chunking_status_msg.edit(content=msg)
+                                else:
+                                    chunking_status_msg = await ctx.send(msg)
+                            except Exception:
+                                pass  # Ignore progress update errors
+                        
+                        chunked_service.set_progress_callback(chunking_progress_callback)
+                        
+                        # Run the ingestion
+                        chunk_stats = await chunked_service.ingest_channel(
+                            channel_id=str(ctx.channel.id)
+                        )
+                        
+                        # Send completion message
+                        embed = discord.Embed(
+                            title="✅ Chunking Complete",
+                            description=f"Vector storage complete for #{ctx.channel.name}",
+                            color=discord.Color.green()
+                        )
+                        
+                        embed.add_field(
+                            name="📊 Overall Statistics",
+                            value=(
+                                f"**Strategies Processed:** {chunk_stats['strategies_processed']}\n"
+                                f"**Total Messages:** {chunk_stats['total_messages_processed']}\n"
+                                f"**Total Chunks:** {chunk_stats['total_chunks_created']}\n"
+                                f"**Errors:** {chunk_stats['total_errors']}\n"
+                                f"**Duration:** {chunk_stats['duration_seconds']:.1f}s"
+                            ),
+                            inline=False
+                        )
+                        
+                        # Add per-strategy details
+                        strategy_summary = []
+                        for strategy_name, details in chunk_stats['strategy_details'].items():
+                            strategy_summary.append(
+                                f"**{strategy_name}**: {details['chunks_created']} chunks "
+                                f"({details['messages_processed']} msgs)"
+                            )
+                        
+                        if strategy_summary:
+                            embed.add_field(
+                                name="📋 Per-Strategy Results",
+                                value="\n".join(strategy_summary),
+                                inline=False
+                            )
+                        
+                        await ctx.send(embed=embed)
+                        
+                    except Exception as e:
+                        self.logger.error(f"Chunking failed: {e}", exc_info=True)
+                        await ctx.send(f"⚠️ Chunking failed: {e}")
+                
+                # Launch background task
+                asyncio.create_task(chunk_in_background())
+            
         except Exception as e:
             await ctx.send(f"❌ Error loading channel messages: {e}")
 
@@ -381,6 +459,115 @@ class Admin(commands.Cog):
             embed.add_field(
                 name="⚠️ No Checkpoint",
                 value="No checkpoint found for this channel. Messages have not been loaded yet.",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command(name='chunk_status', help='Show chunking progress and statistics for current channel')
+    async def chunk_status(self, ctx):
+        """Show chunking progress and statistics for the current channel"""
+        channel_id = str(ctx.channel.id)
+        
+        embed = discord.Embed(
+            title="📦 Chunking Status",
+            description=f"Chunking and vector storage status for #{ctx.channel.name}",
+            color=discord.Color.blue()
+        )
+        
+        try:
+            # Get message storage stats
+            channel_stats = self.message_storage.get_channel_stats(channel_id)
+            
+            embed.add_field(
+                name="💾 Message Storage",
+                value=f"**Total Messages:** {channel_stats['message_count']}",
+                inline=False
+            )
+            
+            # Get chunking checkpoints for all strategies
+            from chunking.constants import ChunkStrategy
+            checkpoint_info = []
+            
+            for strategy in ChunkStrategy:
+                checkpoint = self.message_storage.get_chunking_checkpoint(
+                    channel_id, strategy.value
+                )
+                if checkpoint:
+                    checkpoint_info.append(
+                        f"**{strategy.value}**: Last processed `{checkpoint['last_message_id']}` "
+                        f"at {checkpoint['last_message_timestamp'][:10]}"
+                    )
+                else:
+                    checkpoint_info.append(f"**{strategy.value}**: Not started")
+            
+            if checkpoint_info:
+                embed.add_field(
+                    name="🔄 Chunking Checkpoints",
+                    value="\n".join(checkpoint_info),
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="🔄 Chunking Checkpoints",
+                    value="No checkpoints found",
+                    inline=False
+                )
+            
+            # Get vector storage stats
+            from storage.chunked_memory import ChunkedMemoryService
+            chunked_service = ChunkedMemoryService()
+            strategy_stats = chunked_service.get_strategy_stats()
+            
+            stats_info = []
+            total_chunks = 0
+            for strategy_name, count in strategy_stats.items():
+                stats_info.append(f"**{strategy_name}**: {count:,} chunks")
+                total_chunks += count
+            
+            if stats_info:
+                embed.add_field(
+                    name="📊 Vector Storage (Chunks per Strategy)",
+                    value="\n".join(stats_info),
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="📈 Total Chunks",
+                    value=f"{total_chunks:,} chunks across all strategies",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="📊 Vector Storage",
+                    value="No chunks found in vector database",
+                    inline=False
+                )
+            
+            # Calculate completion percentage
+            if channel_stats['message_count'] > 0:
+                completion_info = []
+                for strategy in ChunkStrategy:
+                    checkpoint = self.message_storage.get_chunking_checkpoint(
+                        channel_id, strategy.value
+                    )
+                    if checkpoint:
+                        # This is approximate - we can't easily determine exact percentage
+                        completion_info.append(f"**{strategy.value}**: ✅ Processed")
+                    else:
+                        completion_info.append(f"**{strategy.value}**: ❌ Not started")
+                
+                embed.add_field(
+                    name="✅ Completion Status",
+                    value="\n".join(completion_info),
+                    inline=False
+                )
+            
+        except Exception as e:
+            self.logger.error(f"Error getting chunk status: {e}", exc_info=True)
+            embed.add_field(
+                name="❌ Error",
+                value=f"Failed to retrieve status: {e}",
                 inline=False
             )
         

@@ -2,9 +2,12 @@ import discord
 from discord.ext import commands
 import asyncio
 from ai.service import AIService
-from storage.memory import MemoryService
+from storage.chunked_memory import ChunkedMemoryService
+from storage.messages.messages import MessageStorage
+from bot.loaders.message_loader import MessageLoader
 from bot.utils.discord_utils import format_discord_message
 from typing import List
+import logging
 
 
 class Summary(commands.Cog):
@@ -19,59 +22,109 @@ class Summary(commands.Cog):
         """
         self.bot = bot
         self.ai_service = AIService(provider_name=ai_provider)
-        self.memory_service = MemoryService()
+        self.chunked_memory_service = ChunkedMemoryService()
+        self.message_storage = MessageStorage()
+        self.message_loader = MessageLoader(self.message_storage)
+        self.logger = logging.getLogger(__name__)
 
 
-    @commands.command(name="summary", help="Generate a summary of previous 50 messages and store in memory")
+    @commands.command(name="summary", help="Generate a summary of recent messages from local storage")
     async def summary(self, ctx, count: int = 50):
-        status_msg = await ctx.send("🔍 Fetching messages...")
-        messages = await self._fetch_messages(ctx, count)
-
-        if not messages:
+        """
+        Generate a summary of recent messages.
+        Uses SQLite cache first, fetches from Discord if needed.
+        """
+        status_msg = await ctx.send("🔍 Checking local storage...")
+        
+        channel_id = str(ctx.channel.id)
+        
+        # Step 1: Check how many messages exist in SQLite
+        stored_messages = self.message_storage.get_recent_messages(channel_id, count)
+        missing_count = 0
+        
+        # Step 2: If insufficient, fetch delta from Discord
+        if len(stored_messages) < count:
+            missing_count = count - len(stored_messages)
+            await status_msg.edit(
+                content=f"📥 Fetching {missing_count} missing messages from Discord..."
+            )
+            
+            try:
+                # Use MessageLoader to fetch and store missing messages
+                await self.message_loader.load_channel_messages(
+                    channel=ctx.channel,
+                    limit=missing_count
+                )
+                
+                # Re-fetch from SQLite to get complete set
+                stored_messages = self.message_storage.get_recent_messages(channel_id, count)
+                
+                self.logger.info(
+                    f"Fetched {missing_count} messages from Discord, "
+                    f"now have {len(stored_messages)} in storage"
+                )
+            except Exception as e:
+                self.logger.error(f"Error fetching missing messages: {e}", exc_info=True)
+                await status_msg.edit(content=f"⚠️ Error fetching messages: {e}")
+                return
+        
+        if not stored_messages:
             await status_msg.edit(content="❌ No messages found to summarize.")
             return
-
-        # Store messages in memory
-        stored_count = 0
-        for message in messages:
-            # messages is already a list of dicts from _fetch_messages
-            # No need to call format_discord_message again
-            success = await self.memory_service.store_message(message)
-            if success:
-                stored_count += 1
-
-        await status_msg.edit(content=f"📊 Analyzing {len(messages)} messages (stored {stored_count})...")
         
-        # Generate summary (existing logic)
-        formatted_messages = self._format_for_summary(messages)
-        results = await self.ai_service.compare_all_styles(formatted_messages)
-
+        await status_msg.edit(
+            content=f"📊 Analyzing {len(stored_messages)} messages from local storage..."
+        )
+        
+        # Step 3: Generate summary from stored messages
+        formatted_messages = self._format_for_summary(stored_messages)
+        
+        try:
+            results = await self.ai_service.compare_all_styles(formatted_messages)
+        except Exception as e:
+            self.logger.error(f"Error generating summary: {e}", exc_info=True)
+            await status_msg.edit(content=f"❌ Error generating summary: {e}")
+            return
+        
         await status_msg.delete()
-        await self._send_summary_embeds(ctx, results, len(messages))
-
-    async def _fetch_messages(self, ctx, count=50) -> List[dict]:
-        messages = []
-        async for message in ctx.channel.history(limit=count):
-            if message.author.bot or not message.content.strip():
-                continue
-            if message.content.startswith(ctx.prefix):
-                continue
-
-            messages.append(
-                {
-                    "content": message.content,
-                    "author": message.author.name,
-                    "timestamp": message.created_at.isoformat(),
-                    "id": message.id,
-                }
-            )
-        return list(reversed(messages))
+        await self._send_summary_embeds(ctx, results, len(stored_messages))
+        
+        # Step 4: Optionally trigger background chunking for delta (if new messages were fetched)
+        if len(stored_messages) == count and missing_count > 0:
+            # Trigger background chunking (fire and forget)
+            asyncio.create_task(self._background_chunk(channel_id))
+    
+    async def _background_chunk(self, channel_id: str):
+        """Background task to chunk newly fetched messages."""
+        try:
+            await self.chunked_memory_service.ingest_channel(channel_id)
+            self.logger.info(f"Background chunking complete for channel {channel_id}")
+        except Exception as e:
+            self.logger.error(f"Background chunking failed: {e}", exc_info=True)
 
     def _format_for_summary(self, messages: List[dict]) -> str:
+        """
+        Format messages for summary generation.
+        Works with both Discord message format and SQLite storage format.
+        """
         formatted = []
         for message in messages:
-            timestamp = message["timestamp"].split("T")[0]
-            formatted.append(f"{timestamp} - {message['author']}: {message['content']}")
+            # Handle both formats (timestamp vs created_at)
+            timestamp = message.get("timestamp", message.get("created_at", ""))
+            if timestamp:
+                timestamp = timestamp.split("T")[0]
+            
+            # Handle both formats (author vs author_name vs author_display_name)
+            author = (
+                message.get("author") or 
+                message.get("author_display_name") or 
+                message.get("author_name") or 
+                "Unknown"
+            )
+            
+            content = message.get("content", "")
+            formatted.append(f"{timestamp} - {author}: {content}")
+        
         return "\n".join(formatted)
 
     async def _send_summary_embeds(self, ctx, results: dict, message_count: int):
@@ -127,40 +180,51 @@ class Summary(commands.Cog):
             embed.set_footer(text=f"Model: {result['model']}")
             await ctx.send(embed=embed)
 
-    @commands.command(name='memory_search', help='Search through stored messages')
+    @commands.command(name='memory_search', help='Search through stored messages using vector search')
     async def memory_search(self, ctx, *, query: str):
-        """Search through stored messages"""
+        """Search through stored messages using vector similarity search"""
         try:
-            await ctx.send(f"🔍 Searching for: **{query}**...")
+            status_msg = await ctx.send(f"🔍 Searching for: **{query}**...")
             
-            # Search with channel filtering
-            results = await self.memory_service.find_relevant_messages(
+            # Use vector search with the active strategy
+            results = self.chunked_memory_service.search(
                 query=query,
-                limit=5,
-                channel_id=str(ctx.channel.id)
+                top_k=5
             )
             
             if not results:
-                await ctx.send("No relevant messages found in this channel.")
+                await status_msg.edit(content="No relevant messages found in this channel.")
                 return
             
             # Create rich embed
             embed = discord.Embed(
                 title=f"🔍 Search Results: {query}",
-                description=f"Found {len(results)} relevant messages",
+                description=f"Found {len(results)} relevant chunks",
                 color=discord.Color.blue()
             )
             
             for i, result in enumerate(results, 1):
+                content = result['content']
+                metadata = result.get('metadata', {})
+                similarity = result.get('similarity', 0)
+                
+                # Truncate content if too long
+                display_content = content[:200] + "..." if len(content) > 200 else content
+                
                 embed.add_field(
-                    name=f"{i}. {result['author_display_name']}",
-                    value=f"{result['content'][:200]}...\n*Similarity: {result['similarity_score']:.2f}*",
+                    name=f"{i}. Chunk from {metadata.get('channel_id', 'Unknown')}",
+                    value=(
+                        f"{display_content}\n"
+                        f"*Strategy: {metadata.get('chunk_strategy', 'unknown')} | "
+                        f"Similarity: {similarity:.2f}*"
+                    ),
                     inline=False
                 )
             
-            await ctx.send(embed=embed)
+            await status_msg.edit(content="", embed=embed)
             
         except Exception as e:
+            self.logger.error(f"Error in memory search: {e}", exc_info=True)
             await ctx.send(f"❌ Error searching messages: {e}")
     
 async def setup(bot):

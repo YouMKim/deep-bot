@@ -37,6 +37,16 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS chunk_checkpoints (
+         channel_id TEXT NOT NULL,
+         strategy TEXT NOT NULL,
+         last_chunk_id TEXT,
+         last_message_id TEXT,
+         last_message_timestamp TEXT,
+         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+         PRIMARY KEY (channel_id, strategy)
+     );
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_messages_channel_timestamp 
     ON messages(channel_id, timestamp DESC);
@@ -227,3 +237,187 @@ class MessageStorage(SQLiteStorage):
                 'checkpoint': checkpoint
             }
 
+    def get_recent_messages(self, channel_id: str, limit: int) -> List[Dict]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # Fetch in DESC order, then reverse to return oldest-to-newest
+            cursor.execute("""
+                SELECT message_id, channel_id, guild_id, content,
+                    author_id, author_name, author_display_name,
+                    channel_name, guild_name, timestamp, created_at,
+                    is_bot, has_attachments, message_type, metadata
+                FROM messages
+                WHERE channel_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (str(channel_id), limit))
+            
+            rows = cursor.fetchall()
+            messages = []
+            for row in rows:
+                messages.append({
+                    'message_id': row[0],
+                    'channel_id': row[1],
+                    'guild_id': row[2],
+                    'content': row[3],
+                    'author_id': row[4],
+                    'author_name': row[5],
+                    'author_display_name': row[6],
+                    'channel_name': row[7],
+                    'guild_name': row[8],
+                    'timestamp': row[9],
+                    'created_at': row[10],
+                    'is_bot': bool(row[11]),
+                    'has_attachments': bool(row[12]),
+                    'message_type': row[13],
+                    'metadata': json.loads(row[14]) if row[14] else {}
+                })
+            
+            # Reverse to return oldest-to-newest
+            return list(reversed(messages))
+
+    def get_messages_after(self, channel_id: str, message_id: str, limit: Optional[int] = None) -> List[Dict]:
+        """
+        Get messages after a specific message ID (for incremental processing).
+        
+        Args:
+            channel_id: Channel ID to fetch from
+            message_id: Message ID to start after
+            limit: Maximum number of messages to return (None for all)
+            
+        Returns:
+            List of message dictionaries, ordered oldest to newest
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # First get the timestamp of the reference message
+            cursor.execute("""
+                SELECT timestamp FROM messages WHERE message_id = ?
+            """, (str(message_id),))
+            
+            row = cursor.fetchone()
+            if not row:
+                self.logger.warning(f"Message {message_id} not found, returning empty list")
+                return []
+            
+            reference_timestamp = row[0]
+            
+            # Get messages after that timestamp
+            if limit:
+                cursor.execute("""
+                    SELECT message_id, channel_id, guild_id, content,
+                        author_id, author_name, author_display_name,
+                        channel_name, guild_name, timestamp, created_at,
+                        is_bot, has_attachments, message_type, metadata
+                    FROM messages
+                    WHERE channel_id = ? AND timestamp > ?
+                    ORDER BY timestamp ASC
+                    LIMIT ?
+                """, (str(channel_id), reference_timestamp, limit))
+            else:
+                cursor.execute("""
+                    SELECT message_id, channel_id, guild_id, content,
+                        author_id, author_name, author_display_name,
+                        channel_name, guild_name, timestamp, created_at,
+                        is_bot, has_attachments, message_type, metadata
+                    FROM messages
+                    WHERE channel_id = ? AND timestamp > ?
+                    ORDER BY timestamp ASC
+                """, (str(channel_id), reference_timestamp))
+            
+            rows = cursor.fetchall()
+            messages = []
+            for row in rows:
+                messages.append({
+                    'message_id': row[0],
+                    'channel_id': row[1],
+                    'guild_id': row[2],
+                    'content': row[3],
+                    'author_id': row[4],
+                    'author_name': row[5],
+                    'author_display_name': row[6],
+                    'channel_name': row[7],
+                    'guild_name': row[8],
+                    'timestamp': row[9],
+                    'created_at': row[10],
+                    'is_bot': bool(row[11]),
+                    'has_attachments': bool(row[12]),
+                    'message_type': row[13],
+                    'metadata': json.loads(row[14]) if row[14] else {}
+                })
+            
+            return messages
+
+    def get_chunking_checkpoint(self, channel_id: str, strategy: str) -> Optional[Dict]:
+        """
+        Get the last checkpoint for a specific chunking strategy.
+        
+        Args:
+            channel_id: Channel ID
+            strategy: Chunking strategy name
+            
+        Returns:
+            Dictionary with checkpoint data or None if not found
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT last_chunk_id, last_message_id, last_message_timestamp, updated_at
+                FROM chunk_checkpoints
+                WHERE channel_id = ? AND strategy = ?
+            """, (str(channel_id), str(strategy)))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'last_chunk_id': row[0],
+                    'last_message_id': row[1],
+                    'last_message_timestamp': row[2],
+                    'updated_at': row[3]
+                }
+            return None
+
+    def update_chunking_checkpoint(
+        self,
+        channel_id: str,
+        strategy: str,
+        last_chunk_id: str,
+        last_message_id: str,
+        last_timestamp: str,
+    ) -> None:
+        """
+        Update checkpoint after successfully processing a batch.
+        
+        Args:
+            channel_id: Channel ID
+            strategy: Chunking strategy name
+            last_chunk_id: ID of the last chunk created
+            last_message_id: ID of the last message processed
+            last_timestamp: Timestamp of the last message processed
+        """
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO chunk_checkpoints (
+                        channel_id, strategy, last_chunk_id, last_message_id,
+                        last_message_timestamp, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    str(channel_id),
+                    str(strategy),
+                    str(last_chunk_id),
+                    str(last_message_id),
+                    str(last_timestamp),
+                    datetime.now().isoformat()
+                ))
+                conn.commit()
+                self.logger.info(
+                    f"Updated chunking checkpoint for {channel_id} / {strategy}: "
+                    f"last_message={last_message_id}"
+                )
+            except Exception as e:
+                conn.rollback()
+                self.logger.error(f"Failed to update chunking checkpoint: {e}")
+                raise
