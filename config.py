@@ -48,6 +48,22 @@ class Config:
     CHUNKING_OVERLAP: int = int(os.getenv("CHUNKING_OVERLAP", "2"))  # overlapping messages
     CHUNKING_MAX_TOKENS: int = int(os.getenv("CHUNKING_MAX_TOKENS", "512"))  # max tokens per chunk
     CHUNKING_MIN_CHUNK_SIZE: int = int(os.getenv("CHUNKING_MIN_CHUNK_SIZE", "3"))  # min messages per chunk
+    
+    # Default chunking strategies to use (comma-separated)
+    # Options: single, temporal, conversation, sliding_window, author, tokens
+    # Default: single,tokens (fastest, covers most use cases)
+    CHUNKING_DEFAULT_STRATEGIES: str = os.getenv("CHUNKING_DEFAULT_STRATEGIES", "single,tokens")
+
+    # Vector Store Configuration
+    VECTOR_STORE_PROVIDER: str = os.getenv("VECTOR_STORE_PROVIDER", "chroma")  # chroma, pinecone, etc.
+
+
+    #RAG configs 
+    RAG_DEFAULT_TOP_K: int = int(os.getenv("RAG_DEFAULT_TOP_K", "10"))
+    RAG_DEFAULT_SIMILARITY_THRESHOLD: float = float(os.getenv("RAG_DEFAULT_SIMILARITY_THRESHOLD", "0.35"))
+    RAG_DEFAULT_MAX_CONTEXT_TOKENS: int = int(os.getenv("RAG_DEFAULT_MAX_CONTEXT_TOKENS", "4000"))
+    RAG_DEFAULT_TEMPERATURE: float = float(os.getenv("RAG_DEFAULT_TEMPERATURE", "0.7"))
+    RAG_DEFAULT_STRATEGY: str = os.getenv("RAG_DEFAULT_STRATEGY", "tokens")
 
     @classmethod
     def load_blacklist(cls):

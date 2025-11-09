@@ -182,9 +182,16 @@ class Summary(commands.Cog):
 
     @commands.command(name='memory_search', help='Search through stored messages using vector search')
     async def memory_search(self, ctx, *, query: str):
-        """Search through stored messages using vector similarity search"""
+        """
+        Search through stored messages using vector similarity search.
+        Uses the active strategy (default: tokens).
+        Use !set_search_strategy to change which strategy to search.
+        """
         try:
-            status_msg = await ctx.send(f"🔍 Searching for: **{query}**...")
+            active_strategy = self.chunked_memory_service.active_strategy
+            status_msg = await ctx.send(
+                f"🔍 Searching for: **{query}** (using `{active_strategy}` strategy)..."
+            )
             
             # Use vector search with the active strategy
             results = self.chunked_memory_service.search(
@@ -226,6 +233,39 @@ class Summary(commands.Cog):
         except Exception as e:
             self.logger.error(f"Error in memory search: {e}", exc_info=True)
             await ctx.send(f"❌ Error searching messages: {e}")
+    
+    @commands.command(name='set_search_strategy', help='Set which chunking strategy to use for searches')
+    async def set_search_strategy(self, ctx, strategy: str = None):
+        """
+        Set which chunking strategy to use for vector searches.
+        
+        Usage:
+            !set_search_strategy - Show current strategy
+            !set_search_strategy tokens - Use tokens strategy
+            !set_search_strategy single - Use single strategy
+        """
+        if strategy is None:
+            # Show current strategy
+            current = self.chunked_memory_service.active_strategy
+            await ctx.send(f"🔍 Current search strategy: **{current}**")
+            return
+        
+        try:
+            from chunking.constants import ChunkStrategy
+            new_strategy = ChunkStrategy(strategy.lower())
+            self.chunked_memory_service.set_active_strategy(new_strategy)
+            
+            await ctx.send(
+                f"✅ Search strategy changed to: **{new_strategy.value}**\n"
+                f"Future `!memory_search` commands will use this strategy."
+            )
+        except ValueError:
+            from chunking.constants import ChunkStrategy
+            valid_strategies = ", ".join([s.value for s in ChunkStrategy])
+            await ctx.send(
+                f"❌ Invalid strategy: `{strategy}`\n"
+                f"Valid strategies: {valid_strategies}"
+            )
     
 async def setup(bot):
     await bot.add_cog(Summary(bot))

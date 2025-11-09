@@ -22,12 +22,10 @@ class ChunkingService:
     - single: One message per chunk
     - sliding_window: Overlapping windows 
     - author: Group by author
-    - tokens: token aware chunking
+    - tokens: Token-aware chunking (respects token limits)
     
-    Handling oversized chunks:
-    - Use chunk_temporal_with_token_limit() instead of chunk_temporal() 
-      to prevent chunks from exceeding token limits
-    - Or use split_oversized_chunks() to post-process chunks (limited)
+    Note: Use the 'tokens' strategy if you need to guarantee chunks stay within token limits.
+    The 'temporal' and 'conversation' strategies may create chunks that exceed limits.
     """
     
     def __init__(

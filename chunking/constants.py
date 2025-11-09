@@ -9,7 +9,6 @@ class ChunkStrategy(str, Enum):
     SLIDING_WINDOW = "sliding_window"
     AUTHOR = "author"
     TOKENS = "tokens"
-    TEMPORAL_WITH_TOKEN_LIMIT = "temporal_with_token_limit"
 
     @classmethod
     def values(cls) -> List[str]:

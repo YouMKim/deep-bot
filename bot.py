@@ -97,6 +97,11 @@ class DeepBot(commands.Bot):
             logger.info("Loaded admin cog")
         except Exception as e:
             logger.error(f"Failed to load admin cog: {e}")
+        try:
+            await self.load_extension("bot.cogs.rag")
+            logger.info("Loaded rag cog")
+        except Exception as e:
+            logger.error(f"Failed to load rag cog: {e}")
 
 
 async def main():

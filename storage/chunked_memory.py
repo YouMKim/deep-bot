@@ -19,7 +19,7 @@ class ChunkedMemoryService:
         embedder: Optional[EmbeddingBase] = None,
         message_storage: Optional[MessageStorage] = None,
         chunking_service: Optional[ChunkingService] = None,
-        default_strategy: ChunkStrategy = ChunkStrategy.TEMPORAL,
+        default_strategy: ChunkStrategy = ChunkStrategy.SINGLE,
     ):
         self.vector_store = vector_store or VectorStoreFactory.create()
         self.embedder = embedder or EmbeddingFactory.create_embedder()
@@ -29,6 +29,7 @@ class ChunkedMemoryService:
         self.progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
 
         self.logger = logging.getLogger(__name__)
+        self.logger.info(f"ChunkedMemoryService initialized with active strategy: {self.active_strategy}")
 
     def set_active_strategy(self, strategy: ChunkStrategy) -> None:
         if strategy.value not in ChunkStrategy.values():
@@ -92,7 +93,9 @@ class ChunkedMemoryService:
         self,
         query: str,
         strategy: Optional[ChunkStrategy] = None,
-        top_k: int = 5,
+        top_k: int = 10,
+        exclude_blacklisted: bool = True,
+        filter_authors: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
         Search for relevant chunks using the specified (or active) strategy.
@@ -101,6 +104,8 @@ class ChunkedMemoryService:
             query: text to embed and search for
             strategy: optional strategy override; defaults to active strategy
             top_k: number of results to return
+            exclude_blacklisted: if True, filter out chunks from blacklisted authors
+            filter_authors: if provided, only return chunks from these authors
         """
         strategy_value = (strategy or ChunkStrategy(self.active_strategy)).value
         collection_name = f"discord_chunks_{strategy_value}"
@@ -111,11 +116,16 @@ class ChunkedMemoryService:
             self.logger.error("Failed to generate query embedding: %s", exc)
             raise
 
+        # Fetch more results to account for potential filtering
+        # If any filtering is enabled, request extra results
+        needs_filtering = exclude_blacklisted or filter_authors
+        fetch_k = top_k * 3 if needs_filtering else top_k
+
         try:
             results = self.vector_store.query(
                 collection_name=collection_name,
                 query_embeddings=[query_embedding],
-                n_results=top_k,
+                n_results=fetch_k,
             )
         except Exception as exc:
             self.logger.error(
@@ -130,24 +140,60 @@ class ChunkedMemoryService:
         metadatas = results.get("metadatas") or []
         distances = results.get("distances") or []
 
+        self.logger.info(f"Vector search returned {len(documents[0]) if documents and documents[0] else 0} results")
+
         if documents and documents[0]:
             metadata_list = metadatas[0] if metadatas else []
             distance_list = distances[0] if distances else []
 
             for index, document in enumerate(documents[0]):
+                metadata = metadata_list[index] if index < len(metadata_list) else {}
+                author = metadata.get('author', '')
+                
                 similarity = (
                     1 - distance_list[index]
                     if index < len(distance_list)
                     else None
                 )
+                
+                # Log each chunk with similarity score
+                content_preview = document[:100] + "..." if len(document) > 100 else document
+                self.logger.info(
+                    f"Chunk {index + 1}: similarity={similarity:.3f}, "
+                    f"author={author}, content='{content_preview}'"
+                )
+                
+                # Check if author is blacklisted
+                if exclude_blacklisted:
+                    from config import Config
+                    if author in Config.BLACKLIST_IDS or str(author) in [str(bid) for bid in Config.BLACKLIST_IDS]:
+                        self.logger.info(f"  [FILTERED] Blacklisted author: {author}")
+                        continue
+                
+                # Check if we're filtering to specific authors
+                if filter_authors:
+                    # Normalize author for comparison (username and display name)
+                    author_lower = author.lower()
+                    # Check if author matches any of the filter authors (case-insensitive)
+                    if not any(fa.lower() in author_lower or author_lower in fa.lower() for fa in filter_authors):
+                        self.logger.info(f"  [FILTERED] Author {author} not in filter list {filter_authors}")
+                        continue
+                
                 formatted_results.append(
                     {
                         "content": document,
-                        "metadata": metadata_list[index] if index < len(metadata_list) else {},
+                        "metadata": metadata,
                         "similarity": similarity,
                     }
                 )
+                
+                self.logger.info(f"  [INCLUDED] (total so far: {len(formatted_results)}/{top_k})")
+                
+                # Stop once we have enough results
+                if len(formatted_results) >= top_k:
+                    break
 
+        self.logger.info(f"Final results: {len(formatted_results)} chunks returned (top_k={top_k})")
         return formatted_results
 
     def get_strategy_stats(self) -> Dict[str, int]:
@@ -186,16 +232,19 @@ class ChunkedMemoryService:
         Args:
             channel_id: Channel ID to process
             batch_size: Number of messages to process per batch (default 1000)
-            strategies: List of strategies to use (default: all strategies)
+            strategies: List of strategies to use (default: from config, typically single+tokens)
             
         Returns:
             Statistics dictionary with per-strategy results
         """
         start_time = datetime.now()
         
-        # Use all strategies if none specified
+        # Use configured default strategies if none specified
         if strategies is None:
-            strategies = list(ChunkStrategy)
+            from config import Config
+            default_strategies = Config.CHUNKING_DEFAULT_STRATEGIES.split(',')
+            strategies = [ChunkStrategy(s.strip()) for s in default_strategies]
+            self.logger.info(f"Using default strategies: {[s.value for s in strategies]}")
         
         self.logger.info(
             f"Starting channel ingestion for {channel_id} with {len(strategies)} strategies"
@@ -246,11 +295,13 @@ class ChunkedMemoryService:
                 while True:
                     # Load next batch of messages
                     if last_processed_id:
+                        # Continue from last processed message
                         messages = self.message_storage.get_messages_after(
                             channel_id, last_processed_id, batch_size
                         )
                     else:
-                        messages = self.message_storage.get_recent_messages(
+                        # Start from oldest messages
+                        messages = self.message_storage.get_oldest_messages(
                             channel_id, batch_size
                         )
                     

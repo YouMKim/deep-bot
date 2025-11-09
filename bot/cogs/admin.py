@@ -573,6 +573,139 @@ class Admin(commands.Cog):
         
         await ctx.send(embed=embed)
     
+    @commands.command(name='rechunk', help='Re-run chunking from last checkpoint (Admin only)')
+    async def rechunk(self, ctx, strategy: str = None):
+        """
+        Re-run chunking for messages that haven't been chunked yet.
+        
+        Usage:
+            !rechunk - Re-chunk all strategies from their last checkpoints
+            !rechunk single - Re-chunk only the 'single' strategy
+        """
+        from config import Config
+        
+        # Manual owner check
+        if str(ctx.author.id) != str(Config.BOT_OWNER_ID):
+            await ctx.send("🚫 **Access Denied!** Only the bot admin can re-chunk messages.")
+            return
+        
+        try:
+            channel_id = str(ctx.channel.id)
+            
+            # Check if there are any messages to chunk
+            channel_stats = self.message_storage.get_channel_stats(channel_id)
+            
+            if channel_stats['message_count'] == 0:
+                await ctx.send("❌ No messages found in storage. Run `!load_channel` first.")
+                return
+            
+            # Determine which strategies to process
+            from chunking.constants import ChunkStrategy
+            
+            if strategy:
+                # Validate strategy name
+                try:
+                    strategies = [ChunkStrategy(strategy.lower())]
+                    strategy_name = strategy.lower()
+                except ValueError:
+                    valid_strategies = ", ".join([s.value for s in ChunkStrategy])
+                    await ctx.send(
+                        f"❌ Invalid strategy: `{strategy}`\n"
+                        f"Valid strategies: {valid_strategies}"
+                    )
+                    return
+            else:
+                # Use None to let ingest_channel use config defaults
+                strategies = None
+                from config import Config
+                default_strats = Config.CHUNKING_DEFAULT_STRATEGIES
+                strategy_name = f"default strategies ({default_strats})"
+            
+            # Show initial status
+            status_msg = await ctx.send(
+                f"🔄 Starting chunking for {channel_stats['message_count']} messages "
+                f"using {strategy_name}..."
+            )
+            
+            # Create background task for chunking
+            async def chunk_in_background():
+                try:
+                    from storage.chunked_memory import ChunkedMemoryService
+                    chunked_service = ChunkedMemoryService()
+                    
+                    # Progress callback for chunking
+                    chunking_status_msg = None
+                    
+                    async def chunking_progress_callback(progress):
+                        nonlocal chunking_status_msg
+                        try:
+                            msg = (
+                                f"🔄 Chunking {progress['strategy']}: "
+                                f"{progress['total_processed']} messages processed, "
+                                f"{progress['chunks_created']} chunks created"
+                            )
+                            if chunking_status_msg:
+                                await chunking_status_msg.edit(content=msg)
+                            else:
+                                chunking_status_msg = await ctx.send(msg)
+                        except Exception:
+                            pass  # Ignore progress update errors
+                    
+                    chunked_service.set_progress_callback(chunking_progress_callback)
+                    
+                    # Run the ingestion
+                    chunk_stats = await chunked_service.ingest_channel(
+                        channel_id=channel_id,
+                        strategies=strategies
+                    )
+                    
+                    # Send completion message
+                    embed = discord.Embed(
+                        title="✅ Chunking Complete",
+                        description=f"Vector storage complete for #{ctx.channel.name}",
+                        color=discord.Color.green()
+                    )
+                    
+                    embed.add_field(
+                        name="📊 Overall Statistics",
+                        value=(
+                            f"**Strategies Processed:** {chunk_stats['strategies_processed']}\n"
+                            f"**Total Messages:** {chunk_stats['total_messages_processed']}\n"
+                            f"**Total Chunks:** {chunk_stats['total_chunks_created']}\n"
+                            f"**Errors:** {chunk_stats['total_errors']}\n"
+                            f"**Duration:** {chunk_stats['duration_seconds']:.1f}s"
+                        ),
+                        inline=False
+                    )
+                    
+                    # Add per-strategy details
+                    strategy_summary = []
+                    for strategy_name, details in chunk_stats['strategy_details'].items():
+                        strategy_summary.append(
+                            f"**{strategy_name}**: {details['chunks_created']} chunks "
+                            f"({details['messages_processed']} msgs)"
+                        )
+                    
+                    if strategy_summary:
+                        embed.add_field(
+                            name="📋 Per-Strategy Results",
+                            value="\n".join(strategy_summary),
+                            inline=False
+                        )
+                    
+                    await ctx.send(embed=embed)
+                    
+                except Exception as e:
+                    self.logger.error(f"Chunking failed: {e}", exc_info=True)
+                    await ctx.send(f"⚠️ Chunking failed: {e}")
+            
+            # Launch background task
+            asyncio.create_task(chunk_in_background())
+            
+        except Exception as e:
+            self.logger.error(f"Error in rechunk command: {e}", exc_info=True)
+            await ctx.send(f"❌ Error: {e}")
+    
     @commands.command(name='ai_provider', help='Switch AI provider (Admin only)')
     async def ai_provider(self, ctx, provider: str = None):
         """
