@@ -362,14 +362,14 @@ class TestIngestChannel:
             strategies=[ChunkStrategy.SINGLE]
         )
         
-        # The first call uses get_recent_messages which gets the 5 MOST RECENT messages (110-114)
-        # So it will only process one batch of the most recent messages
-        # This is actually correct behavior - get_recent_messages gets the N most recent
-        assert stats['total_messages_processed'] == 5  # Only the most recent batch
+        # When no checkpoint exists, ingest_channel uses get_oldest_messages
+        # which processes all messages in batches from oldest to newest
+        # With batch_size=5 and 15 messages, it should process all 15 in 3 batches
+        assert stats['total_messages_processed'] == 15  # All messages processed in batches
         
-        # Should have processed one batch
+        # Should have processed 3 batches (15 messages / 5 batch_size = 3 batches)
         strategy_details = stats['strategy_details']['single']
-        assert strategy_details['batches_processed'] == 1
+        assert strategy_details['batches_processed'] == 3
     
     @pytest.mark.asyncio
     async def test_ingest_channel_empty_channel(self, temp_db, mock_vector_store, mock_embedder, mock_chunking_service):

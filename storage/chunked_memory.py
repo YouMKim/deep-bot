@@ -7,10 +7,11 @@ from chunking.constants import ChunkStrategy
 from typing import Dict, List, Optional, Sequence, Callable, Any
 from storage.messages.messages import MessageStorage
 from chunking.service import ChunkingService
+from rank_bm25 import BM25Okapi
+import re 
 import logging
 import asyncio
 from datetime import datetime
-
 class ChunkedMemoryService:
 
     def __init__(
@@ -31,6 +32,9 @@ class ChunkedMemoryService:
         self.logger = logging.getLogger(__name__)
         self.logger.info(f"ChunkedMemoryService initialized with active strategy: {self.active_strategy}")
 
+        # BM25 cache: {collection_name: {'bm25': BM25Okapi, 'tokenized_corpus': List, 'documents': List, 'version': int}}
+        self._bm25_cache: Dict[str, Dict[str, Any]] = {}
+    
     def set_active_strategy(self, strategy: ChunkStrategy) -> None:
         if strategy.value not in ChunkStrategy.values():
             raise ValueError(f"Unsupported strategy: {strategy}")
@@ -54,6 +58,12 @@ class ChunkedMemoryService:
 
             collection_name = f"discord_chunks_{strategy_name}"
             self.vector_store.create_collection(collection_name)
+
+            if collection_name in self._bm25_cache:
+                self.logger.debug(f"Invalidating BM25 cache for {collection_name}")
+                del self._bm25_cache[collection_name]
+
+            documents = [chunk.content for chunk in chunks]
 
             documents = [chunk.content for chunk in chunks]
             metadatas = [chunk.metadata for chunk in chunks]
@@ -195,6 +205,166 @@ class ChunkedMemoryService:
 
         self.logger.info(f"Final results: {len(formatted_results)} chunks returned (top_k={top_k})")
         return formatted_results
+
+    def search_bm25(
+        self,
+        query: str,
+        strategy: Optional[ChunkStrategy] = None,
+        top_k: int = 10,
+        exclude_blacklisted: bool = True,
+        filter_authors: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """
+        Keyword-based search using BM25 algorithm.
+        """
+
+        strategy_value = (strategy or ChunkStrategy(self.active_strategy)).value
+        collection_name = f"discord_chunks_{strategy_value}"
+
+        # Check if cache is valid
+        current_count = self.vector_store.get_collection_count(collection_name)
+        cache_entry = self._bm25_cache.get(collection_name)
+        
+        if cache_entry and cache_entry.get('version') == current_count and current_count > 0:
+            # Cache is valid, use it
+            self.logger.debug(f"Using cached BM25 index for {collection_name}")
+            bm25 = cache_entry['bm25']
+            all_docs = cache_entry['documents']
+        else:
+            # Cache miss or invalid, rebuild
+            self.logger.info(f"Building BM25 index for {collection_name} (count: {current_count})")
+            
+            try:
+                all_docs = self.vector_store.get_all_documents(collection_name)
+            except Exception as e:
+                self.logger.error(f"Failed to fetch documents for BM25: {e}")
+                return []
+
+            if not all_docs:
+                self.logger.warning(f"No documents found in {collection_name}")
+                return []
+
+            # Tokenize documents
+            tokenized_corpus = [self._tokenize(doc['document']) for doc in all_docs]
+
+            # Build BM25 index
+            bm25 = BM25Okapi(tokenized_corpus)
+            
+            # Cache the index
+            self._bm25_cache[collection_name] = {
+                'bm25': bm25,
+                'tokenized_corpus': tokenized_corpus,
+                'documents': all_docs,
+                'version': current_count
+            }
+            self.logger.info(f"Cached BM25 index for {collection_name}")
+
+        # Tokenize query
+        tokenized_query = self._tokenize(query)
+
+        # Get BM25 scores
+        scores = bm25.get_scores(tokenized_query)
+
+        # Sort by score and create results
+        scored_docs = list(zip(all_docs, scores))
+        scored_docs.sort(key=lambda x: x[1], reverse=True)
+
+        # Format results (same as before)
+        results = []
+        for doc_data, score in scored_docs:
+            document = doc_data['document']
+            metadata = doc_data['metadata']
+            author = metadata.get('author', '')
+
+            # Apply filters
+            if exclude_blacklisted:
+                from config import Config
+                if author in Config.BLACKLIST_IDS or str(author) in [str(bid) for bid in Config.BLACKLIST_IDS]:
+                    continue
+
+            if filter_authors:
+                author_lower = author.lower()
+                if not any(fa.lower() in author_lower or author_lower in fa.lower() for fa in filter_authors):
+                    continue
+
+            results.append({
+                "content": document,
+                "metadata": metadata,
+                "bm25_score": float(score),
+                "similarity": float(score) / 100.0  # Normalize for consistency
+            })
+
+            if len(results) >= top_k:
+                break
+
+        self.logger.info(f"BM25 search returned {len(results)} results")
+        return results
+
+    def _tokenize(self, text: str) -> List[str]:
+        text = re.sub(r'[^\w\s]', ' ', text.lower())
+        tokens = text.split()
+        return [t for t in tokens if len(t) > 2] 
+
+    def search_hybrid(
+        self,
+        query: str,
+        strategy: Optional[ChunkStrategy] = None,
+        top_k: int = 10,
+        bm25_weight: float = 0.5,
+        vector_weight: float = 0.5,
+        exclude_blacklisted: bool = True,
+        filter_authors: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """
+        Hybrid search combining BM25 and vector similarity.
+
+        Args:
+            query: Search query
+            strategy: Chunking strategy
+            top_k: Number of results
+            bm25_weight: Weight for BM25 scores
+            vector_weight: Weight for vector scores
+            exclude_blacklisted: Filter blacklisted authors
+            filter_authors: Filter to specific authors
+
+        Returns:
+            Fused results from both search methods
+        """
+        from rag.hybrid_search import HybridSearchService
+
+        # Retrieve more candidates from each method
+        fetch_k = top_k * 3
+
+        # BM25 search
+        bm25_results = self.search_bm25(
+            query=query,
+            strategy=strategy,
+            top_k=fetch_k,
+            exclude_blacklisted=exclude_blacklisted,
+            filter_authors=filter_authors
+        )
+
+        # Vector search
+        vector_results = self.search(
+            query=query,
+            strategy=strategy,
+            top_k=fetch_k,
+            exclude_blacklisted=exclude_blacklisted,
+            filter_authors=filter_authors
+        )
+
+        # Fuse results
+        hybrid_service = HybridSearchService()
+        fused_results = hybrid_service.hybrid_search(
+            query=query,
+            bm25_results=bm25_results,
+            vector_results=vector_results,
+            bm25_weight=bm25_weight,
+            vector_weight=vector_weight,
+            top_k=top_k
+        )
+
+        return fused_results
 
     def get_strategy_stats(self) -> Dict[str, int]:
         """Return the number of stored chunks for each strategy."""

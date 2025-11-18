@@ -86,20 +86,40 @@ class AIService:
     
     def _clamp_temperature(self, temperature: float) -> float:
         """
-        Clamp temperature to provider-specific limits.
+        Normalize and clamp temperature to provider-specific limits.
+        
+        This ensures consistent behavior across providers:
+        - Temperature values 0-1 are treated as normalized (0% to 100% creativity)
+        - Anthropic (0-1 range): uses value directly
+        - OpenAI (0-2 range): scales value by 2x for equivalent creativity
+        
+        Examples:
+        - 0.7 → Anthropic: 0.7, OpenAI: 1.4 (both 70% of their range)
+        - 0.5 → Anthropic: 0.5, OpenAI: 1.0 (both 50% of their range)
+        - 1.5 → Anthropic: 1.0 (clamped), OpenAI: 1.5 (if >1, assume OpenAI scale)
         
         Args:
-            temperature: Requested temperature value
+            temperature: Requested temperature value (0-1 normalized or 0-2 OpenAI scale)
             
         Returns:
-            Clamped temperature value
+            Normalized and clamped temperature value for the current provider
         """
         if self.provider_name == "anthropic":
             # Anthropic only supports temperature 0-1
-            return max(0.0, min(1.0, temperature))
+            # If value is > 1, assume it's in OpenAI scale, normalize to 0-1
+            if temperature > 1.0:
+                normalized = temperature / 2.0  
+                return max(0.0, min(1.0, normalized))
+            else:
+                return max(0.0, min(1.0, temperature))
         else:
             # OpenAI supports temperature 0-2
-            return max(0.0, min(2.0, temperature))
+            # If value is <= 1, assume it's normalized, scale to OpenAI range
+            if temperature <= 1.0:
+                scaled = temperature * 2.0  
+                return max(0.0, min(2.0, scaled))
+            else:
+                return max(0.0, min(2.0, temperature))
     
     async def generate(self, prompt: str, max_tokens: int = 200, temperature: float = 0.7) -> dict:
         """
@@ -109,19 +129,22 @@ class AIService:
             prompt: The prompt text to send to the AI
             max_tokens: Maximum tokens in the response (default: 200)
             temperature: Model temperature (default: 0.7)
-                       - Anthropic: 0-1 range (clamped automatically)
-                       - OpenAI: 0-2 range (clamped automatically)
+                       - Values 0-1 are normalized across providers for consistent behavior
+                       - Anthropic: 0-1 range (0.7 = 70% creativity)
+                       - OpenAI: 0-2 range (0.7 → normalized to 1.4 = 70% creativity)
+                       - Values >1 are assumed to be in OpenAI scale
+                       - Automatically normalized and clamped per provider
             
         Returns:
             Dictionary with response results and metadata
         """
-        # Clamp temperature to provider-specific limits
-        clamped_temperature = self._clamp_temperature(temperature)
+        # Normalize and clamp temperature to provider-specific limits
+        normalized_temperature = self._clamp_temperature(temperature)
         
         request = AIRequest(
             prompt=prompt,
             max_tokens=max_tokens,
-            temperature=clamped_temperature
+            temperature=normalized_temperature
         )
         
         response = await self.provider.complete(request)
