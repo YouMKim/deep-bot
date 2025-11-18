@@ -24,6 +24,7 @@ from .embedding_service import EmbeddingService
 from .bm25_service import BM25Service
 from .retrieval_service import RetrievalService
 from .ingestion_service import IngestionService
+from .utils import get_collection_name, resolve_strategy, calculate_fetch_k
 
 if TYPE_CHECKING:
     from config import Config
@@ -198,7 +199,7 @@ class ChunkedMemoryService:
         """Return the number of stored chunks for each strategy (backward compatibility)."""
         stats: Dict[str, int] = {}
         for strategy in ChunkStrategy:
-            collection_name = f"discord_chunks_{strategy.value}"
+            collection_name = get_collection_name(strategy.value)
             try:
                 stats[strategy.value] = self.vector_store.get_collection_count(collection_name)
             except Exception:

@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord.ext.commands import cooldown, BucketType
 import logging
+from typing import Optional, List
 from rag.pipeline import RAGPipeline
 from rag.models import RAGConfig, RAGResult
 from rag.validation import QueryValidator
@@ -14,6 +15,33 @@ class RAG(commands.Cog):
         self.config = Config  # Store reference
         self.pipeline = RAGPipeline(config=self.config)
         self.logger = logging.getLogger(__name__)
+
+    def _create_base_config(
+        self,
+        filter_authors: Optional[List[str]] = None,
+        **overrides
+    ) -> RAGConfig:
+        """
+        Create RAGConfig with defaults from Config.
+
+        Args:
+            filter_authors: Optional list of authors to filter to
+            **overrides: Any config values to override defaults
+
+        Returns:
+            RAGConfig instance with defaults applied
+        """
+        config_dict = {
+            'top_k': self.config.RAG_DEFAULT_TOP_K,
+            'similarity_threshold': self.config.RAG_DEFAULT_SIMILARITY_THRESHOLD,
+            'max_context_tokens': self.config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
+            'temperature': self.config.RAG_DEFAULT_TEMPERATURE,
+            'strategy': self.config.RAG_DEFAULT_STRATEGY,
+            'filter_authors': filter_authors,
+        }
+        # Override with any custom settings
+        config_dict.update(overrides)
+        return RAGConfig(**config_dict)
 
     @commands.command(
         name='ask',
@@ -46,14 +74,9 @@ class RAG(commands.Cog):
                 mentioned_users = [user.display_name for user in ctx.message.mentions]
                 self.logger.info(f"Filtering to authors: {mentioned_users}")
             
-            config = RAGConfig(
-                top_k=self.config.RAG_DEFAULT_TOP_K,
-                similarity_threshold=self.config.RAG_DEFAULT_SIMILARITY_THRESHOLD,
-                max_context_tokens=self.config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
-                temperature=self.config.RAG_DEFAULT_TEMPERATURE,
-                strategy=self.config.RAG_DEFAULT_STRATEGY,
-                show_sources=False,  # Simple mode = no sources
+            config = self._create_base_config(
                 filter_authors=mentioned_users if mentioned_users else None,
+                show_sources=False,  # Simple mode = no sources
             )
             
             result = await self.pipeline.answer_question(question, config)
@@ -107,16 +130,11 @@ class RAG(commands.Cog):
             if ctx.message.mentions:
                 mentioned_users = [user.display_name for user in ctx.message.mentions]
 
-            config = RAGConfig(
-                top_k=self.config.RAG_DEFAULT_TOP_K,
-                similarity_threshold=self.config.RAG_DEFAULT_SIMILARITY_THRESHOLD,
-                max_context_tokens=self.config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
-                temperature=self.config.RAG_DEFAULT_TEMPERATURE,
-                strategy=self.config.RAG_DEFAULT_STRATEGY,
-                use_hybrid_search=True,  
+            config = self._create_base_config(
+                filter_authors=mentioned_users if mentioned_users else None,
+                use_hybrid_search=True,
                 bm25_weight=0.5,
                 vector_weight=0.5,
-                filter_authors=mentioned_users if mentioned_users else None,
             )
 
             result = await self.pipeline.answer_question(question, config)
@@ -193,49 +211,62 @@ class RAG(commands.Cog):
         # Reply to the original message with sources
         await reaction.message.reply(embed=embed, mention_author=False)
 
-    @ask.error
-    async def ask_error(self, ctx, error):
-        """Handle errors for the ask command."""
+    async def _handle_cooldown_error(
+        self,
+        ctx,
+        error,
+        rate_limit_msg: str,
+        limit_text: str
+    ):
+        """
+        Generic cooldown error handler.
+
+        Args:
+            ctx: Discord context
+            error: Command error
+            rate_limit_msg: Custom message explaining the rate limit
+            limit_text: Text describing the limit (e.g., "5 questions per minute")
+        """
         if isinstance(error, commands.CommandOnCooldown):
-            # Custom cooldown message
             minutes, seconds = divmod(int(error.retry_after), 60)
 
             embed = discord.Embed(
                 title="⏰ Rate Limit Reached",
                 description=(
-                    f"You're asking questions too quickly!\n\n"
-                    f"Please wait **{minutes}m {seconds}s** before trying again.\n\n"
-                    f"This helps prevent API cost overruns and ensures fair usage."
+                    f"{rate_limit_msg}\n\n"
+                    f"Please wait **{minutes}m {seconds}s** before trying again."
                 ),
                 color=discord.Color.orange()
             )
-            embed.set_footer(text="Limit: 5 questions per minute")
+            embed.set_footer(text=f"Limit: {limit_text}")
 
             await ctx.send(embed=embed)
         else:
-            # Re-raise other errors
             raise error
+
+    @ask.error
+    async def ask_error(self, ctx, error):
+        """Handle errors for the ask command."""
+        await self._handle_cooldown_error(
+            ctx, error,
+            rate_limit_msg=(
+                "You're asking questions too quickly!\n\n"
+                "This helps prevent API cost overruns and ensures fair usage."
+            ),
+            limit_text="5 questions per minute"
+        )
 
     @ask_hybrid.error
     async def ask_hybrid_error(self, ctx, error):
         """Handle errors for the ask_hybrid command."""
-        if isinstance(error, commands.CommandOnCooldown):
-            minutes, seconds = divmod(int(error.retry_after), 60)
-
-            embed = discord.Embed(
-                title="⏰ Rate Limit Reached",
-                description=(
-                    f"Hybrid search is expensive!\n\n"
-                    f"Please wait **{minutes}m {seconds}s** before trying again.\n\n"
-                    f"Consider using regular `!ask` for faster queries."
-                ),
-                color=discord.Color.orange()
-            )
-            embed.set_footer(text="Limit: 3 hybrid questions per minute")
-
-            await ctx.send(embed=embed)
-        else:
-            raise error
+        await self._handle_cooldown_error(
+            ctx, error,
+            rate_limit_msg=(
+                "Hybrid search is expensive!\n\n"
+                "Consider using regular `!ask` for faster queries."
+            ),
+            limit_text="3 hybrid questions per minute"
+        )
 
 async def setup(bot):
     await bot.add_cog(RAG(bot))
