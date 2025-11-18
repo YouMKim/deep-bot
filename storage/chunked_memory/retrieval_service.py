@@ -10,6 +10,7 @@ from embedding.base import EmbeddingBase
 from chunking.constants import ChunkStrategy
 from .author_filter import AuthorFilter
 from .bm25_service import BM25Service
+from .utils import get_collection_name, resolve_strategy, calculate_fetch_k
 
 if TYPE_CHECKING:
     from config import Config
@@ -68,8 +69,8 @@ class RetrievalService:
         Returns:
             List of search results with similarity scores
         """
-        strategy_value = (strategy or ChunkStrategy(active_strategy)).value
-        collection_name = f"discord_chunks_{strategy_value}"
+        strategy_value = resolve_strategy(strategy, active_strategy)
+        collection_name = get_collection_name(strategy_value)
 
         try:
             query_embedding = self.embedder.encode(query)
@@ -78,9 +79,8 @@ class RetrievalService:
             raise
 
         # Fetch more results to account for potential filtering
-        # If any filtering is enabled, request extra results
         needs_filtering = exclude_blacklisted or filter_authors
-        fetch_k = top_k * 3 if needs_filtering else top_k
+        fetch_k = calculate_fetch_k(top_k, needs_filtering=needs_filtering)
 
         try:
             results = self.vector_store.query(
@@ -134,6 +134,7 @@ class RetrievalService:
                         "content": document,
                         "metadata": metadata,
                         "similarity": similarity,
+                        "search_type": "vector",  # Standardized field
                     }
                 )
                 
@@ -175,8 +176,8 @@ class RetrievalService:
         """
         from rag.hybrid_search import HybridSearchService
 
-        # Retrieve more candidates from each method
-        fetch_k = top_k * 3
+        # Retrieve more candidates from each method (for fusion deduplication)
+        fetch_k = calculate_fetch_k(top_k, needs_filtering=False, needs_reranking=False)
 
         # BM25 search
         bm25_results = self.bm25_service.search(

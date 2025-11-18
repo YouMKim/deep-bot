@@ -10,6 +10,7 @@ from rank_bm25 import BM25Okapi
 from storage.vectors.base import VectorStorage
 from chunking.constants import ChunkStrategy
 from .author_filter import AuthorFilter
+from .utils import get_collection_name, resolve_strategy
 
 if TYPE_CHECKING:
     from config import Config
@@ -65,8 +66,8 @@ class BM25Service:
         Returns:
             List of search results with BM25 scores
         """
-        strategy_value = (strategy or ChunkStrategy(active_strategy)).value
-        collection_name = f"discord_chunks_{strategy_value}"
+        strategy_value = resolve_strategy(strategy, active_strategy)
+        collection_name = get_collection_name(strategy_value)
 
         # Check if cache is valid
         current_count = self.vector_store.get_collection_count(collection_name)
@@ -127,11 +128,14 @@ class BM25Service:
             if not self.author_filter.should_include(author, exclude_blacklisted, filter_authors):
                 continue
 
+            # Standardized result format
+            normalized_similarity = float(score) / 100.0  # Normalize for consistency
             results.append({
                 "content": document,
                 "metadata": metadata,
-                "bm25_score": float(score),
-                "similarity": float(score) / 100.0  # Normalize for consistency
+                "bm25_score": float(score),  # Keep raw score for reference
+                "similarity": normalized_similarity,  # Normalized score
+                "search_type": "bm25",  # Standardized field
             })
 
             if len(results) >= top_k:

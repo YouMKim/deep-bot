@@ -148,7 +148,8 @@ class RAGPipeline:
 
         # Retrieve more candidates if reranking is enabled
         # (reranker needs more options to choose from)
-        fetch_k = config.top_k * 3 if config.use_reranking else config.top_k
+        from storage.chunked_memory.utils import calculate_fetch_k
+        fetch_k = calculate_fetch_k(config.top_k, needs_reranking=config.use_reranking)
 
         # Use hybrid search if enabled
         if config.use_hybrid_search:

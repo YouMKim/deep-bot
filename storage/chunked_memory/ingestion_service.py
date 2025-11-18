@@ -14,6 +14,7 @@ from storage.vectors.base import VectorStorage
 from storage.messages.messages import MessageStorage
 from .embedding_service import EmbeddingService
 from .bm25_service import BM25Service
+from .utils import get_collection_name
 
 if TYPE_CHECKING:
     from config import Config
@@ -71,7 +72,7 @@ class IngestionService:
                 self.logger.info("No chunks found for strategy '%s'; skipping", strategy_name)
                 continue
 
-            collection_name = f"discord_chunks_{strategy_name}"
+            collection_name = get_collection_name(strategy_name)
             self.vector_store.create_collection(collection_name)
 
             # Invalidate BM25 cache for this collection
