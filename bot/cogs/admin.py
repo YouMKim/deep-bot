@@ -570,6 +570,46 @@ class Admin(commands.Cog):
         
         await ctx.send(embed=embed)
     
+    @commands.command(name='reset_chunk_checkpoint', help='Delete chunk checkpoint to force re-processing (Admin only)')
+    async def reset_chunk_checkpoint(self, ctx, strategy: str = None):
+        """
+        Delete chunk checkpoint(s) to force re-processing from the beginning.
+        
+        Usage:
+            !reset_chunk_checkpoint - Delete all checkpoints for current channel
+            !reset_chunk_checkpoint single - Delete checkpoint for 'single' strategy only
+        """
+        # Manual owner check
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
+            await ctx.send("🚫 **Access Denied!** Only the bot admin can reset checkpoints.")
+            return
+        
+        try:
+            channel_id = str(ctx.channel.id)
+            
+            # Delete checkpoint(s)
+            deleted = self.message_storage.delete_chunking_checkpoint(channel_id, strategy)
+            
+            if deleted:
+                if strategy:
+                    await ctx.send(
+                        f"✅ Deleted checkpoint for strategy `{strategy}`. "
+                        f"Run `!rechunk {strategy}` to re-process from the beginning."
+                    )
+                else:
+                    await ctx.send(
+                        f"✅ Deleted all checkpoints for this channel. "
+                        f"Run `!rechunk` to re-process from the beginning."
+                    )
+            else:
+                await ctx.send(
+                    f"ℹ️ No checkpoint found for {'strategy `' + strategy + '`' if strategy else 'this channel'}."
+                )
+                
+        except Exception as e:
+            self.logger.error(f"Failed to reset checkpoint: {e}", exc_info=True)
+            await ctx.send(f"❌ Failed to reset checkpoint: {e}")
+
     @commands.command(name='rechunk', help='Re-run chunking from last checkpoint (Admin only)')
     async def rechunk(self, ctx, strategy: str = None):
         """

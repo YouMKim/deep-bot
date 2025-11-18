@@ -469,3 +469,42 @@ class MessageStorage(SQLiteStorage):
                 conn.rollback()
                 self.logger.error(f"Failed to update chunking checkpoint: {e}")
                 raise
+
+    def delete_chunking_checkpoint(self, channel_id: str, strategy: Optional[str] = None) -> bool:
+        """
+        Delete a chunking checkpoint to force re-processing from the beginning.
+        
+        Args:
+            channel_id: Channel ID
+            strategy: Chunking strategy name (or None to delete all strategies for channel)
+            
+        Returns:
+            True if checkpoint was deleted, False if it didn't exist
+        """
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+                if strategy:
+                    cursor.execute("""
+                        DELETE FROM chunk_checkpoints
+                        WHERE channel_id = ? AND strategy = ?
+                    """, (str(channel_id), str(strategy)))
+                    deleted = cursor.rowcount > 0
+                    self.logger.info(
+                        f"Deleted chunking checkpoint for {channel_id} / {strategy}"
+                    )
+                else:
+                    cursor.execute("""
+                        DELETE FROM chunk_checkpoints
+                        WHERE channel_id = ?
+                    """, (str(channel_id),))
+                    deleted = cursor.rowcount > 0
+                    self.logger.info(
+                        f"Deleted all chunking checkpoints for {channel_id}"
+                    )
+                conn.commit()
+                return deleted
+            except Exception as e:
+                conn.rollback()
+                self.logger.error(f"Failed to delete chunking checkpoint: {e}")
+                raise

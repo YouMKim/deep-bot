@@ -51,8 +51,8 @@ class Config:
     
     # Default chunking strategies to use (comma-separated)
     # Options: single, temporal, conversation, sliding_window, author, tokens
-    # Default: single,tokens (fastest, covers most use cases)
-    CHUNKING_DEFAULT_STRATEGIES: str = os.getenv("CHUNKING_DEFAULT_STRATEGIES", "single,tokens")
+    # Default: single,tokens,author (covers most use cases: fast, token-aware, and author-grouped)
+    CHUNKING_DEFAULT_STRATEGIES: str = os.getenv("CHUNKING_DEFAULT_STRATEGIES", "single,tokens,author")
 
     # Vector Store Configuration
     VECTOR_STORE_PROVIDER: str = os.getenv("VECTOR_STORE_PROVIDER", "chroma")  # chroma, pinecone, etc.
