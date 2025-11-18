@@ -25,6 +25,24 @@ class ChromaVectorStorage(VectorStorage):
 
             return self.client.get_or_create_collection(collection_name)
     
+    def get_all_documents(self, collection_name: str) -> List[Dict]:
+        try:
+            collection = self.get_collection(collection_name)
+            results =  collection.get()
+            documents = []
+            for i, doc in enumerate(results['documents']):
+                documents.append({
+                    'document': doc,
+                    'metadata': results['metadatas'][i] if i < len(results['metadatas']) else {},
+                    'id': results['ids'][i] if i < len(results['ids']) else str(i)
+                })
+
+            return documents
+
+        except Exception as e:
+            self.logger.error(f"Failed to get all documents from {collection_name}: {e}")
+            return []
+    
     def add_documents(
         self,
         collection_name: str,

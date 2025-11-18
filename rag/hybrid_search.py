@@ -11,8 +11,7 @@ def reciprocal_rank_fusion(
 ) -> List[Dict]:
     """
     Generic RRF implementation for merging multiple ranked lists.
-    
-    Standalone function version for use in pipeline.
+
     """
     all_docs = {}
     rrf_scores = {}
@@ -104,42 +103,3 @@ class HybridSearchService:
         )
         return results
     
-    def reciprocal_rank_fusion(
-        self,
-        ranked_lists: List[List[Dict]],
-        top_k: int = 10,
-        k_constant: int = 60
-    ) -> List[Dict]:
-        """
-        Generic RRF implementation for merging multiple ranked lists.
-        """
-        all_docs = {}
-        rrf_scores = {}
-
-        for ranked_list in ranked_lists:
-            for rank, doc in enumerate(ranked_list, start=1):
-                # Use first_message_id as unique document identifier
-                doc_id = doc.get('metadata', {}).get('first_message_id', f"doc_{id(doc)}")
-
-                if doc_id not in all_docs:
-                    all_docs[doc_id] = doc
-                    rrf_scores[doc_id] = 0
-
-                # RRF formula: 1 / (k + rank)
-                rrf_scores[doc_id] += 1.0 / (k_constant + rank)
-
-        # Sort by RRF score
-        sorted_docs = sorted(
-            [(doc_id, score) for doc_id, score in rrf_scores.items()],
-            key=lambda x: x[1],
-            reverse=True
-        )
-
-        # Return top-k
-        results = []
-        for doc_id, score in sorted_docs[:top_k]:
-            doc = all_docs[doc_id]
-            doc['rrf_score'] = score
-            results.append(doc)
-
-        return results

@@ -57,6 +57,9 @@ class Config:
     # Vector Store Configuration
     VECTOR_STORE_PROVIDER: str = os.getenv("VECTOR_STORE_PROVIDER", "chroma")  # chroma, pinecone, etc.
 
+    # Embedding batch size (tune based on your embedder)
+    EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "100"))  # Process 100 documents at a time
+    EMBEDDING_BATCH_DELAY: float = float(os.getenv("EMBEDDING_BATCH_DELAY", "0.1"))  # Seconds to wait between batches (rate limiting)
 
     #RAG configs 
     RAG_DEFAULT_TOP_K: int = int(os.getenv("RAG_DEFAULT_TOP_K", "10"))

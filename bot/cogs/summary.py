@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord.ext.commands import cooldown, BucketType
 import asyncio
 from ai.service import AIService
 from storage.chunked_memory import ChunkedMemoryService
@@ -22,17 +23,21 @@ class Summary(commands.Cog):
         """
         self.bot = bot
         self.ai_service = AIService(provider_name=ai_provider)
-        self.chunked_memory_service = ChunkedMemoryService()
+        from config import Config
+        self.chunked_memory_service = ChunkedMemoryService(config=Config)
         self.message_storage = MessageStorage()
         self.message_loader = MessageLoader(self.message_storage)
         self.logger = logging.getLogger(__name__)
 
 
     @commands.command(name="summary", help="Generate a summary of recent messages from local storage")
+    @cooldown(rate=3, per=120, type=BucketType.user)  # 3 per 2 minutes
     async def summary(self, ctx, count: int = 50):
         """
         Generate a summary of recent messages.
         Uses SQLite cache first, fetches from Discord if needed.
+        
+        Rate limit: 3 summaries per 2 minutes per user.
         """
         status_msg = await ctx.send("🔍 Checking local storage...")
         
@@ -266,6 +271,27 @@ class Summary(commands.Cog):
                 f"❌ Invalid strategy: `{strategy}`\n"
                 f"Valid strategies: {valid_strategies}"
             )
+    
+    @summary.error
+    async def summary_error(self, ctx, error):
+        """Handle errors for the summary command."""
+        if isinstance(error, commands.CommandOnCooldown):
+            minutes, seconds = divmod(int(error.retry_after), 60)
+
+            embed = discord.Embed(
+                title="⏰ Rate Limit Reached",
+                description=(
+                    f"Summary generation is expensive!\n\n"
+                    f"Please wait **{minutes}m {seconds}s** before trying again.\n\n"
+                    f"This helps prevent API cost overruns."
+                ),
+                color=discord.Color.orange()
+            )
+            embed.set_footer(text="Limit: 3 summaries per 2 minutes")
+
+            await ctx.send(embed=embed)
+        else:
+            raise error
     
 async def setup(bot):
     await bot.add_cog(Summary(bot))

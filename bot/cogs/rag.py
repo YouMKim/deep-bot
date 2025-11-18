@@ -1,21 +1,25 @@
 import discord
 from discord.ext import commands
+from discord.ext.commands import cooldown, BucketType
 import logging
 from rag.pipeline import RAGPipeline
 from rag.models import RAGConfig, RAGResult
+from rag.validation import QueryValidator
 from config import Config
 
 class RAG(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        self.pipeline = RAGPipeline()
+        self.config = Config  # Store reference
+        self.pipeline = RAGPipeline(config=self.config)
         self.logger = logging.getLogger(__name__)
 
     @commands.command(
         name='ask',
         help='Ask a question about Discord conversations. Mention users to filter to their messages.'
     )
+    @cooldown(rate=5, per=60, type=BucketType.user)  # 5 requests per minute per user
     async def ask(self, ctx, *, question: str):
         """
         Simple RAG command for all users.
@@ -23,7 +27,16 @@ class RAG(commands.Cog):
         Usage: 
             !ask What was decided about the database?
             !ask @Alice what did you say about the schema?
+        
+        Rate limit: 5 questions per minute per user.
         """
+        # Validate before processing
+        try:
+            question = QueryValidator.validate(question)
+        except ValueError as e:
+            await ctx.send(f"❌ {str(e)}")
+            return
+        
         async with ctx.typing():
             self.logger.info(f"User {ctx.author} asked: {question}")
             
@@ -34,11 +47,11 @@ class RAG(commands.Cog):
                 self.logger.info(f"Filtering to authors: {mentioned_users}")
             
             config = RAGConfig(
-                top_k=Config.RAG_DEFAULT_TOP_K,
-                similarity_threshold=Config.RAG_DEFAULT_SIMILARITY_THRESHOLD,
-                max_context_tokens=Config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
-                temperature=Config.RAG_DEFAULT_TEMPERATURE,
-                strategy=Config.RAG_DEFAULT_STRATEGY,
+                top_k=self.config.RAG_DEFAULT_TOP_K,
+                similarity_threshold=self.config.RAG_DEFAULT_SIMILARITY_THRESHOLD,
+                max_context_tokens=self.config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
+                temperature=self.config.RAG_DEFAULT_TEMPERATURE,
+                strategy=self.config.RAG_DEFAULT_STRATEGY,
                 show_sources=False,  # Simple mode = no sources
                 filter_authors=mentioned_users if mentioned_users else None,
             )
@@ -71,12 +84,22 @@ class RAG(commands.Cog):
             self.bot._rag_cache[message.id] = result
 
     @commands.command(name='ask_hybrid')
+    @cooldown(rate=3, per=60, type=BucketType.user)  # 3 requests per minute (more expensive)
     async def ask_hybrid(self, ctx, *, question: str):
         """
         Ask a question using hybrid search (BM25 + vector).
 
         Usage: !ask_hybrid What was decided about the database?
+        
+        Rate limit: 3 questions per minute per user (more expensive than regular ask).
         """
+        # Validate before processing
+        try:
+            question = QueryValidator.validate(question)
+        except ValueError as e:
+            await ctx.send(f"❌ {str(e)}")
+            return
+        
         async with ctx.typing():
             self.logger.info(f"User {ctx.author} asked (hybrid): {question}")
 
@@ -85,11 +108,11 @@ class RAG(commands.Cog):
                 mentioned_users = [user.display_name for user in ctx.message.mentions]
 
             config = RAGConfig(
-                top_k=Config.RAG_DEFAULT_TOP_K,
-                similarity_threshold=Config.RAG_DEFAULT_SIMILARITY_THRESHOLD,
-                max_context_tokens=Config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
-                temperature=Config.RAG_DEFAULT_TEMPERATURE,
-                strategy=Config.RAG_DEFAULT_STRATEGY,
+                top_k=self.config.RAG_DEFAULT_TOP_K,
+                similarity_threshold=self.config.RAG_DEFAULT_SIMILARITY_THRESHOLD,
+                max_context_tokens=self.config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
+                temperature=self.config.RAG_DEFAULT_TEMPERATURE,
+                strategy=self.config.RAG_DEFAULT_STRATEGY,
                 use_hybrid_search=True,  
                 bm25_weight=0.5,
                 vector_weight=0.5,
@@ -169,6 +192,50 @@ class RAG(commands.Cog):
         
         # Reply to the original message with sources
         await reaction.message.reply(embed=embed, mention_author=False)
+
+    @ask.error
+    async def ask_error(self, ctx, error):
+        """Handle errors for the ask command."""
+        if isinstance(error, commands.CommandOnCooldown):
+            # Custom cooldown message
+            minutes, seconds = divmod(int(error.retry_after), 60)
+
+            embed = discord.Embed(
+                title="⏰ Rate Limit Reached",
+                description=(
+                    f"You're asking questions too quickly!\n\n"
+                    f"Please wait **{minutes}m {seconds}s** before trying again.\n\n"
+                    f"This helps prevent API cost overruns and ensures fair usage."
+                ),
+                color=discord.Color.orange()
+            )
+            embed.set_footer(text="Limit: 5 questions per minute")
+
+            await ctx.send(embed=embed)
+        else:
+            # Re-raise other errors
+            raise error
+
+    @ask_hybrid.error
+    async def ask_hybrid_error(self, ctx, error):
+        """Handle errors for the ask_hybrid command."""
+        if isinstance(error, commands.CommandOnCooldown):
+            minutes, seconds = divmod(int(error.retry_after), 60)
+
+            embed = discord.Embed(
+                title="⏰ Rate Limit Reached",
+                description=(
+                    f"Hybrid search is expensive!\n\n"
+                    f"Please wait **{minutes}m {seconds}s** before trying again.\n\n"
+                    f"Consider using regular `!ask` for faster queries."
+                ),
+                color=discord.Color.orange()
+            )
+            embed.set_footer(text="Limit: 3 hybrid questions per minute")
+
+            await ctx.send(embed=embed)
+        else:
+            raise error
 
 async def setup(bot):
     await bot.add_cog(RAG(bot))

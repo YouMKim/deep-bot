@@ -657,7 +657,7 @@ class TestBlacklistFiltering:
     def test_search_excludes_blacklisted_authors(self):
         """Should filter out chunks from blacklisted authors"""
         from storage.chunked_memory import ChunkedMemoryService
-        from config import Config
+        from unittest.mock import Mock
         
         # Mock chunks with blacklisted and non-blacklisted authors
         chunks_with_blacklisted = [
@@ -678,38 +678,36 @@ class TestBlacklistFiltering:
             }
         ]
         
-        # Temporarily set blacklist
-        original_blacklist = Config.BLACKLIST_IDS
-        Config.BLACKLIST_IDS = ['BlacklistedUser']
+        # Create mock config with blacklist (no need to modify real Config!)
+        mock_config = Mock()
+        mock_config.BLACKLIST_IDS = ['BlacklistedUser']
         
-        try:
-            mock_vector_store = MagicMock()
-            mock_vector_store.query = MagicMock(return_value={
-                'documents': [[c['content'] for c in chunks_with_blacklisted]],
-                'metadatas': [[c['metadata'] for c in chunks_with_blacklisted]],
-                'distances': [[1 - c['similarity'] for c in chunks_with_blacklisted]]
-            })
-            
-            mock_embedder = MagicMock()
-            mock_embedder.encode = MagicMock(return_value=[0.1, 0.2, 0.3])
-            
-            service = ChunkedMemoryService(
-                vector_store=mock_vector_store,
-                embedder=mock_embedder
-            )
-            
-            results = service.search("test query", top_k=5, exclude_blacklisted=True)
-            
-            # Should only include non-blacklisted authors
-            assert len(results) == 2
-            authors = [r['metadata']['author'] for r in results]
-            assert 'Alice' in authors
-            assert 'Bob' in authors
-            assert 'BlacklistedUser' not in authors
-            
-        finally:
-            # Restore original blacklist
-            Config.BLACKLIST_IDS = original_blacklist
+        mock_vector_store = MagicMock()
+        mock_vector_store.query = MagicMock(return_value={
+            'documents': [[c['content'] for c in chunks_with_blacklisted]],
+            'metadatas': [[c['metadata'] for c in chunks_with_blacklisted]],
+            'distances': [[1 - c['similarity'] for c in chunks_with_blacklisted]]
+        })
+        
+        mock_embedder = MagicMock()
+        mock_embedder.encode = MagicMock(return_value=[0.1, 0.2, 0.3])
+        
+        # Inject mock config - this is the benefit of dependency injection!
+        service = ChunkedMemoryService(
+            vector_store=mock_vector_store,
+            embedder=mock_embedder,
+            config=mock_config  # ✅ Use mock config instead of modifying real one
+        )
+        
+        results = service.search("test query", top_k=5, exclude_blacklisted=True)
+        
+        # Should only include non-blacklisted authors
+        assert len(results) == 2
+        authors = [r['metadata']['author'] for r in results]
+        assert 'Alice' in authors
+        assert 'Bob' in authors
+        assert 'BlacklistedUser' not in authors
+        # ✅ No need to restore - we never modified real Config!
     
     def test_search_with_blacklist_disabled(self):
         """Should include all chunks when blacklist filtering is disabled"""

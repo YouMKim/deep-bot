@@ -498,6 +498,124 @@ class TestGetStrategyStats:
         assert stats['temporal'] == 50
 
 
+class TestEmbeddingFallback:
+    """Test embedding error recovery with fallback mechanism"""
+    
+    @pytest.mark.asyncio
+    async def test_batch_failure_falls_back_to_individual(self, temp_db, mock_vector_store, mock_chunking_service):
+        """Test that batch failure triggers individual encoding fallback"""
+        from unittest.mock import Mock
+        
+        # Create embedder that fails on batch but succeeds individually
+        mock_embedder = Mock()
+        mock_embedder.dimension = 384
+        mock_embedder.encode_batch = Mock(side_effect=Exception("Batch encoding failed"))
+        mock_embedder.encode = Mock(return_value=[0.1] * 384)
+        
+        service = ChunkedMemoryService(
+            vector_store=mock_vector_store,
+            embedder=mock_embedder,
+            message_storage=temp_db,
+            chunking_service=mock_chunking_service
+        )
+        
+        chunks = {
+            'single': [
+                Chunk(content='Test message 1', metadata={'first_message_id': '1', 'author': 'Alice'}, message_ids=['1']),
+                Chunk(content='Test message 2', metadata={'first_message_id': '2', 'author': 'Bob'}, message_ids=['2']),
+            ]
+        }
+        
+        # Should not raise - fallback should handle it
+        await service.store_all_strategies(chunks)
+        
+        # Verify fallback was used
+        assert mock_embedder.encode_batch.called
+        assert mock_embedder.encode.call_count == 2  # Called individually for each document
+        
+        # Verify documents were still stored
+        assert mock_vector_store.add_documents.called
+    
+    @pytest.mark.asyncio
+    async def test_individual_failure_uses_zero_vector(self, temp_db, mock_vector_store, mock_chunking_service):
+        """Test that individual failures use zero vectors"""
+        from unittest.mock import Mock
+        
+        # Create embedder that fails on batch and fails on second document
+        mock_embedder = Mock()
+        mock_embedder.dimension = 384
+        mock_embedder.encode_batch = Mock(side_effect=Exception("Batch encoding failed"))
+        mock_embedder.encode = Mock(side_effect=[
+            [0.1] * 384,  # First succeeds
+            Exception("Individual encoding failed"),  # Second fails
+        ])
+        
+        service = ChunkedMemoryService(
+            vector_store=mock_vector_store,
+            embedder=mock_embedder,
+            message_storage=temp_db,
+            chunking_service=mock_chunking_service
+        )
+        
+        chunks = {
+            'single': [
+                Chunk(content='Test message 1', metadata={'first_message_id': '1', 'author': 'Alice'}, message_ids=['1']),
+                Chunk(content='Test message 2', metadata={'first_message_id': '2', 'author': 'Bob'}, message_ids=['2']),
+            ]
+        }
+        
+        # Should not raise - zero vector should be used
+        await service.store_all_strategies(chunks)
+        
+        # Verify zero vector was used (check the embeddings passed to add_documents)
+        call_args = mock_vector_store.add_documents.call_args
+        embeddings = call_args[1]['embeddings']
+        
+        # First embedding should be valid
+        assert embeddings[0] == [0.1] * 384
+        
+        # Second embedding should be zero vector
+        assert embeddings[1] == [0.0] * 384
+    
+    @pytest.mark.asyncio
+    async def test_embedding_stats_tracking(self, temp_db, mock_vector_store, mock_chunking_service):
+        """Test that embedding stats are tracked correctly"""
+        from unittest.mock import Mock
+        
+        # Create embedder that fails on batch and fails on one document
+        mock_embedder = Mock()
+        mock_embedder.dimension = 384
+        mock_embedder.encode_batch = Mock(side_effect=Exception("Batch encoding failed"))
+        mock_embedder.encode = Mock(side_effect=[
+            [0.1] * 384,  # First succeeds
+            Exception("Individual encoding failed"),  # Second fails
+        ])
+        
+        service = ChunkedMemoryService(
+            vector_store=mock_vector_store,
+            embedder=mock_embedder,
+            message_storage=temp_db,
+            chunking_service=mock_chunking_service
+        )
+        
+        chunks = {
+            'single': [
+                Chunk(content='Test message 1', metadata={'first_message_id': '1', 'author': 'Alice'}, message_ids=['1']),
+                Chunk(content='Test message 2', metadata={'first_message_id': '2', 'author': 'Bob'}, message_ids=['2']),
+            ]
+        }
+        
+        await service.store_all_strategies(chunks)
+        
+        # Check stats
+        stats = service.get_embedding_stats()
+        
+        assert stats['total_embedded'] == 2
+        assert stats['successful'] == 1
+        assert stats['failed'] == 1
+        assert stats['success_rate'] == 0.5
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
