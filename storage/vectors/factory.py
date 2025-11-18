@@ -1,13 +1,18 @@
-from typing import Optional
-from config import Config
+from typing import Optional, TYPE_CHECKING
 from storage.vectors.base import VectorStorage
 from storage.vectors.providers.chroma import ChromaVectorStorage
+
+if TYPE_CHECKING:
+    from config import Config
 
 class VectorStoreFactory:
     
     @staticmethod
-    def create(provider_name: Optional[str] = None) -> VectorStorage:
-        provider_name = provider_name or Config.VECTOR_STORE_PROVIDER
+    def create(provider_name: Optional[str] = None, config: Optional['Config'] = None) -> VectorStorage:
+        from config import Config as ConfigClass
+        
+        config_instance = config or ConfigClass
+        provider_name = provider_name or config_instance.VECTOR_STORE_PROVIDER
         
         if provider_name == "chroma":
             return ChromaVectorStorage()

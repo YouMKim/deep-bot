@@ -13,9 +13,12 @@ class Admin(commands.Cog):
     """Admin-only commands for managing the bot and loading messages."""
 
     def __init__(self, bot):
+        from config import Config
+        
         self.bot = bot
+        self.config = Config
         self.message_storage = MessageStorage()
-        self.message_loader = MessageLoader(self.message_storage)
+        self.message_loader = MessageLoader(self.message_storage, config=self.config)
         self.logger = logging.getLogger(__name__)
         self.ai_service = None
 
@@ -30,8 +33,6 @@ class Admin(commands.Cog):
     @commands.command(name='whoami', help='Check who the bot thinks is the owner')
     async def whoami(self, ctx):
         """Check who the bot thinks is the owner"""
-        from config import Config
-        
         embed = discord.Embed(
             title="🤖 Bot Owner Information",
             color=discord.Color.blue()
@@ -40,7 +41,7 @@ class Admin(commands.Cog):
         # Show configured owner ID
         embed.add_field(
             name="Configured Owner ID",
-            value=f"`{Config.BOT_OWNER_ID}`",
+            value=f"`{self.config.BOT_OWNER_ID}`",
             inline=False
         )
         
@@ -52,7 +53,7 @@ class Admin(commands.Cog):
         )
         
         # Check if you're the owner
-        is_owner = str(ctx.author.id) == str(Config.BOT_OWNER_ID)
+        is_owner = str(ctx.author.id) == str(self.config.BOT_OWNER_ID)
         embed.add_field(
             name="Are you the owner?",
             value="✅ Yes" if is_owner else "❌ No",
@@ -78,7 +79,6 @@ class Admin(commands.Cog):
     @commands.command(name='check_blacklist', help='Check the current blacklist configuration')
     async def check_blacklist(self, ctx):
         """Check the current blacklist configuration"""
-        from config import Config
         import os
         
         embed = discord.Embed(
@@ -94,16 +94,16 @@ class Admin(commands.Cog):
             inline=False
         )
         
-        if Config.BLACKLIST_IDS:
-            blacklist_str = "\n".join([f"• `{user_id}`" for user_id in Config.BLACKLIST_IDS])
+        if self.config.BLACKLIST_IDS:
+            blacklist_str = "\n".join([f"• `{user_id}`" for user_id in self.config.BLACKLIST_IDS])
             embed.add_field(
-                name=f"Blacklisted User IDs ({len(Config.BLACKLIST_IDS)})",
+                name=f"Blacklisted User IDs ({len(self.config.BLACKLIST_IDS)})",
                 value=blacklist_str,
                 inline=False
             )
             
             # Check if current author is blacklisted
-            is_blacklisted = ctx.author.id in Config.BLACKLIST_IDS
+            is_blacklisted = ctx.author.id in self.config.BLACKLIST_IDS
             embed.add_field(
                 name="Are you blacklisted?",
                 value="✅ Yes (you are blacklisted)" if is_blacklisted else "❌ No (you are not blacklisted)",
@@ -122,10 +122,10 @@ class Admin(commands.Cog):
             inline=False
         )
         
-        if Config.BLACKLIST_IDS:
+        if self.config.BLACKLIST_IDS:
             embed.add_field(
                 name="Blacklist Types",
-                value=f"[{', '.join([type(x).__name__ for x in Config.BLACKLIST_IDS[:3]])}]",
+                value=f"[{', '.join([type(x).__name__ for x in self.config.BLACKLIST_IDS[:3]])}]",
                 inline=False
             )
         
@@ -134,24 +134,23 @@ class Admin(commands.Cog):
     @commands.command(name='reload_blacklist', help='Reload the blacklist from environment variables (Admin only)')
     async def reload_blacklist(self, ctx):
         """Reload the blacklist from environment variables"""
-        from config import Config
         import os
         
         # Manual owner check
-        if str(ctx.author.id) != str(Config.BOT_OWNER_ID):
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
             await ctx.send("🚫 **Access Denied!** Only the bot admin can reload the blacklist.")
             return
         
         try:
             # Show before state
-            before_count = len(Config.BLACKLIST_IDS)
+            before_count = len(self.config.BLACKLIST_IDS)
             raw_env = os.getenv("BLACKLIST_IDS", "")
             
             # Reload
-            Config.load_blacklist()
+            self.config.load_blacklist()
             
             # Show after state
-            after_count = len(Config.BLACKLIST_IDS)
+            after_count = len(self.config.BLACKLIST_IDS)
             
             embed = discord.Embed(
                 title="🔄 Blacklist Reload",
@@ -176,8 +175,8 @@ class Admin(commands.Cog):
                 inline=True
             )
             
-            if Config.BLACKLIST_IDS:
-                blacklist_str = "\n".join([f"• `{user_id}`" for user_id in Config.BLACKLIST_IDS])
+            if self.config.BLACKLIST_IDS:
+                blacklist_str = "\n".join([f"• `{user_id}`" for user_id in self.config.BLACKLIST_IDS])
                 embed.add_field(
                     name="Loaded User IDs",
                     value=blacklist_str,
@@ -200,10 +199,8 @@ class Admin(commands.Cog):
     @commands.command(name='load_channel', help='Load all messages from current channel into memory (Admin only)')
     async def load_channel(self, ctx, limit: int = None):
         """Load all messages from the current channel into memory"""
-        from config import Config
-        
         # Manual owner check
-        if str(ctx.author.id) != str(Config.BOT_OWNER_ID):
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
             await ctx.send("🚫 **Access Denied!** You don't have permission to use admin commands. Only the bot admin can use these commands.")
             return
         
@@ -273,8 +270,7 @@ class Admin(commands.Cog):
                 async def chunk_in_background():
                     try:
                         from storage.chunked_memory import ChunkedMemoryService
-                        from config import Config
-                        chunked_service = ChunkedMemoryService(config=Config)
+                        chunked_service = ChunkedMemoryService(config=self.config)
                         
                         # Progress callback for chunking
                         chunking_status_msg = None
@@ -517,8 +513,7 @@ class Admin(commands.Cog):
             
             # Get vector storage stats
             from storage.chunked_memory import ChunkedMemoryService
-            from config import Config
-            chunked_service = ChunkedMemoryService(config=Config)
+            chunked_service = ChunkedMemoryService(config=self.config)
             strategy_stats = chunked_service.get_strategy_stats()
             
             stats_info = []
@@ -584,10 +579,8 @@ class Admin(commands.Cog):
             !rechunk - Re-chunk all strategies from their last checkpoints
             !rechunk single - Re-chunk only the 'single' strategy
         """
-        from config import Config
-        
         # Manual owner check
-        if str(ctx.author.id) != str(Config.BOT_OWNER_ID):
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
             await ctx.send("🚫 **Access Denied!** Only the bot admin can re-chunk messages.")
             return
         
@@ -619,8 +612,7 @@ class Admin(commands.Cog):
             else:
                 # Use None to let ingest_channel use config defaults
                 strategies = None
-                from config import Config
-                default_strats = Config.CHUNKING_DEFAULT_STRATEGIES
+                default_strats = self.config.CHUNKING_DEFAULT_STRATEGIES
                 strategy_name = f"default strategies ({default_strats})"
             
             # Show initial status
@@ -633,8 +625,7 @@ class Admin(commands.Cog):
             async def chunk_in_background():
                 try:
                     from storage.chunked_memory import ChunkedMemoryService
-                    from config import Config
-                    chunked_service = ChunkedMemoryService(config=Config)
+                    chunked_service = ChunkedMemoryService(config=self.config)
                     
                     # Progress callback for chunking
                     chunking_status_msg = None
@@ -719,10 +710,8 @@ class Admin(commands.Cog):
             !ai_provider openai - Switch to OpenAI
             !ai_provider anthropic - Switch to Anthropic
         """
-        from config import Config
-        
         # Manual owner check
-        if str(ctx.author.id) != str(Config.BOT_OWNER_ID):
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
             await ctx.send("🚫 **Access Denied!** Only the bot admin can change AI provider.")
             return
         
