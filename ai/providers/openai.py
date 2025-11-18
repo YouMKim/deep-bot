@@ -1,5 +1,5 @@
 import time
-import openai
+from openai import AsyncOpenAI
 from typing import Optional
 from ..base import BaseAIProvider
 from ..models import AIRequest, AIResponse, TokenUsage, CostDetails
@@ -36,7 +36,7 @@ class OpenAIProvider(BaseAIProvider):
     }
     
     def __init__(self, api_key: str, default_model: str = "gpt-4o-mini"):
-        self.client = openai.OpenAI(api_key=api_key)
+        self.client = AsyncOpenAI(api_key=api_key)
         self.default_model = default_model
     
     async def complete(self, request: AIRequest) -> AIResponse:
@@ -60,7 +60,7 @@ class OpenAIProvider(BaseAIProvider):
             params["temperature"] = request.temperature
         
         try:
-            response = self.client.chat.completions.create(**params)
+            response = await self.client.chat.completions.create(**params)
         except Exception as e:
             raise Exception(f"OpenAI API error: {e}")
         
@@ -125,4 +125,7 @@ class OpenAIProvider(BaseAIProvider):
     def get_default_model(self) -> str:
         """Get the default model."""
         return self.default_model
+    
+    async def close(self):
+        await self.client.close()
 

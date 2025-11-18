@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, TYPE_CHECKING
 from storage.chunked_memory import ChunkedMemoryService
 from ai.service import AIService
 from storage.messages.messages import MessageStorage
@@ -8,6 +8,10 @@ from chunking.constants import ChunkStrategy
 from rag.query_enhancement import QueryEnhancementService
 from rag.hybrid_search import reciprocal_rank_fusion
 from rag.reranking import ReRankingService
+from .validation import QueryValidator
+
+if TYPE_CHECKING:
+    from config import Config
 
 class RAGPipeline:
     
@@ -16,8 +20,12 @@ class RAGPipeline:
         chunked_memory_service: Optional[ChunkedMemoryService] = None,
         ai_service: Optional[AIService] = None,
         message_storage: Optional[MessageStorage] = None,
+        config: Optional['Config'] = None,
     ):
-        self.chunked_memory = chunked_memory_service or ChunkedMemoryService()
+        from config import Config as ConfigClass  # Import here to avoid circular
+        
+        self.config = config or ConfigClass
+        self.chunked_memory = chunked_memory_service or ChunkedMemoryService(config=self.config)
         self.ai_service = ai_service or AIService()
         self.query_enhancer = QueryEnhancementService(ai_service=self.ai_service)
         self.message_storage = message_storage or MessageStorage()
@@ -33,6 +41,7 @@ class RAGPipeline:
         Execute the complete RAG pipeline.
         
         Pipeline stages:
+        0. Validate and sanitize query
         1. Retrieve relevant chunks
         2. Filter by similarity
         3. Build context with metadata
@@ -41,6 +50,18 @@ class RAGPipeline:
 
         """
         config = config or RAGConfig()
+        
+        # Stage 0: Validate input
+        try:
+            question = QueryValidator.validate(question)
+        except ValueError as e:
+            self.logger.warning(f"Query validation failed: {e}")
+            return RAGResult(
+                answer=f"Invalid query: {str(e)}",
+                sources=[],
+                config_used=config,
+                model="none",
+            )
         
         self.logger.info(f"Starting RAG pipeline for question: {question[:50]}...")
         

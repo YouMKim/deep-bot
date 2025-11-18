@@ -1,7 +1,7 @@
 import time
 import asyncio
 from typing import Optional
-import anthropic
+from anthropic import AsyncAnthropic
 
 from ..base import BaseAIProvider
 from ..models import AIRequest, AIResponse, TokenUsage, CostDetails
@@ -32,7 +32,7 @@ class AnthropicProvider(BaseAIProvider):
     
     def __init__(self, api_key: str, default_model: str = "claude-haiku-4-5"):
         from anthropic import Anthropic
-        self.client = Anthropic(api_key=api_key)
+        self.client = AsyncAnthropic(api_key=api_key)
         self.default_model = default_model
     
     async def complete(self, request: AIRequest) -> AIResponse:
@@ -52,10 +52,7 @@ class AnthropicProvider(BaseAIProvider):
             params["temperature"] = request.temperature
 
         try:
-            response = await asyncio.to_thread(
-                self.client.messages.create,
-                **params
-            )
+            response = await self.client.messages.create(**params)
         except Exception as e:
             raise Exception(f"Anthropic API error: {e}")
         

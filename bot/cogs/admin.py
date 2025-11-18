@@ -273,7 +273,8 @@ class Admin(commands.Cog):
                 async def chunk_in_background():
                     try:
                         from storage.chunked_memory import ChunkedMemoryService
-                        chunked_service = ChunkedMemoryService()
+                        from config import Config
+                        chunked_service = ChunkedMemoryService(config=Config)
                         
                         # Progress callback for chunking
                         chunking_status_msg = None
@@ -516,7 +517,8 @@ class Admin(commands.Cog):
             
             # Get vector storage stats
             from storage.chunked_memory import ChunkedMemoryService
-            chunked_service = ChunkedMemoryService()
+            from config import Config
+            chunked_service = ChunkedMemoryService(config=Config)
             strategy_stats = chunked_service.get_strategy_stats()
             
             stats_info = []
@@ -631,7 +633,8 @@ class Admin(commands.Cog):
             async def chunk_in_background():
                 try:
                     from storage.chunked_memory import ChunkedMemoryService
-                    chunked_service = ChunkedMemoryService()
+                    from config import Config
+                    chunked_service = ChunkedMemoryService(config=Config)
                     
                     # Progress callback for chunking
                     chunking_status_msg = None

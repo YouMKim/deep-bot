@@ -12,6 +12,8 @@ import re
 import logging
 import asyncio
 from datetime import datetime
+from config import Config as ConfigClass
+
 class ChunkedMemoryService:
 
     def __init__(
@@ -20,12 +22,14 @@ class ChunkedMemoryService:
         embedder: Optional[EmbeddingBase] = None,
         message_storage: Optional[MessageStorage] = None,
         chunking_service: Optional[ChunkingService] = None,
+        config: Optional[ConfigClass] = None,
         default_strategy: ChunkStrategy = ChunkStrategy.SINGLE,
     ):
         self.vector_store = vector_store or VectorStoreFactory.create()
         self.embedder = embedder or EmbeddingFactory.create_embedder()
         self.message_storage = message_storage or MessageStorage()
         self.chunking_service = chunking_service or ChunkingService()
+        self.config = config or ConfigClass  # Store config instance
         self.active_strategy = default_strategy.value
         self.progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
 
@@ -34,15 +38,181 @@ class ChunkedMemoryService:
 
         # BM25 cache: {collection_name: {'bm25': BM25Okapi, 'tokenized_corpus': List, 'documents': List, 'version': int}}
         self._bm25_cache: Dict[str, Dict[str, Any]] = {}
+        
+        # Embedding failure tracking
+        self._embedding_failure_count = 0
+        self._embedding_success_count = 0
     
     def set_active_strategy(self, strategy: ChunkStrategy) -> None:
         if strategy.value not in ChunkStrategy.values():
             raise ValueError(f"Unsupported strategy: {strategy}")
         self.active_strategy = strategy.value
 
-    def store_all_strategies(self, chunks_by_strategy: Dict[str, Sequence[Chunk]]) -> None:
+    def _embed_with_fallback(
+        self,
+        documents: List[str]
+    ) -> List[List[float]]:
+        """
+        Embed documents with fallback to individual encoding on batch failure.
+
+        Strategy:
+        1. Try batch encoding (fast)
+        2. If batch fails, try one-by-one (slower but more resilient)
+        3. For individual failures, use zero vector (allows partial success)
+
+        Args:
+            documents: List of document strings to embed
+
+        Returns:
+            List of embedding vectors (same length as documents)
+        """
+        try:
+            # Try batch encoding first (optimal path)
+            embeddings = self.embedder.encode_batch(documents)
+
+            # Validate dimensions
+            if embeddings and len(embeddings[0]) != self.embedder.dimension:
+                raise ValueError(
+                    f"Embedding dimension mismatch: expected {self.embedder.dimension}, "
+                    f"got {len(embeddings[0])}"
+                )
+
+            self.logger.debug(f"Successfully batch-encoded {len(documents)} documents")
+            self._embedding_success_count += len(documents)
+            return embeddings
+
+        except Exception as batch_error:
+            self.logger.warning(
+                f"Batch embedding failed ({batch_error}), "
+                f"falling back to individual encoding for {len(documents)} documents"
+            )
+
+            # Fallback: Encode one by one
+            embeddings = []
+            failed_count = 0
+
+            for i, doc in enumerate(documents):
+                try:
+                    embedding = self.embedder.encode(doc)
+
+                    # Validate dimension
+                    if len(embedding) != self.embedder.dimension:
+                        raise ValueError(f"Dimension mismatch: {len(embedding)} != {self.embedder.dimension}")
+
+                    embeddings.append(embedding)
+                    self._embedding_success_count += 1
+
+                except Exception as doc_error:
+                    failed_count += 1
+                    self.logger.error(
+                        f"Failed to embed document {i} (preview: {doc[:100]}...): {doc_error}"
+                    )
+
+                    # Use zero vector as placeholder
+                    # This allows partial batch success
+                    zero_vector = [0.0] * self.embedder.dimension
+                    embeddings.append(zero_vector)
+                    self._embedding_failure_count += 1
+
+                    self.logger.info(f"Using zero vector for failed document {i}")
+
+            if failed_count > 0:
+                self.logger.warning(
+                    f"Embedding completed with {failed_count}/{len(documents)} failures "
+                    f"(using zero vectors for failed documents)"
+                )
+            else:
+                self.logger.info(
+                    f"Successfully encoded all {len(documents)} documents individually "
+                    f"after batch failure"
+                )
+
+            return embeddings
+
+    async def _embed_in_batches(
+        self,
+        documents: List[str],
+        batch_size: Optional[int] = None,
+        delay: Optional[float] = None
+    ) -> List[List[float]]:
+        """
+        Embed documents in batches to avoid memory/rate limit issues.
+
+        Benefits:
+        - Prevents memory exhaustion
+        - Avoids API rate limits
+        - Allows progress tracking
+        - More resilient to partial failures
+
+        Args:
+            documents: List of document strings to embed
+            batch_size: Documents per batch (default from config)
+            delay: Seconds to wait between batches (default from config)
+
+        Returns:
+            List of embedding vectors
+        """
+        batch_size = batch_size or self.config.EMBEDDING_BATCH_SIZE
+        delay = delay or self.config.EMBEDDING_BATCH_DELAY
+
+        total_docs = len(documents)
+        all_embeddings = []
+
+        self.logger.info(
+            f"Embedding {total_docs} documents in batches of {batch_size}"
+        )
+
+        for i in range(0, total_docs, batch_size):
+            batch = documents[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+            total_batches = (total_docs + batch_size - 1) // batch_size
+
+            self.logger.info(
+                f"Embedding batch {batch_num}/{total_batches} "
+                f"({len(batch)} documents)"
+            )
+
+            try:
+                # Use fallback method for resilience
+                batch_embeddings = self._embed_with_fallback(batch)
+                all_embeddings.extend(batch_embeddings)
+
+                # Report progress
+                progress_pct = ((i + len(batch)) / total_docs) * 100
+                self.logger.debug(f"Progress: {progress_pct:.1f}%")
+
+                # Rate limiting: wait between batches (except last batch)
+                if i + batch_size < total_docs and delay > 0:
+                    await asyncio.sleep(delay)
+
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to embed batch {batch_num}/{total_batches}: {e}"
+                )
+                # Fail fast for now (could implement retry logic later)
+                raise
+
+        self.logger.info(
+            f"Successfully embedded {len(all_embeddings)}/{total_docs} documents"
+        )
+
+        return all_embeddings
+
+    def get_embedding_stats(self) -> Dict[str, Any]:
+        """Get embedding success/failure statistics."""
+        total = self._embedding_success_count + self._embedding_failure_count
+        return {
+            'total_embedded': total,
+            'successful': self._embedding_success_count,
+            'failed': self._embedding_failure_count,
+            'success_rate': self._embedding_success_count / total if total > 0 else 0.0
+        }
+
+    async def store_all_strategies(self, chunks_by_strategy: Dict[str, Sequence[Chunk]]) -> None:
         """
         Persist chunks for every strategy into the vector store.
+
+        Now async to support batched embedding with delays.
 
         Args:
             chunks_by_strategy: mapping of strategy name to a sequence of chunks.
@@ -64,8 +234,6 @@ class ChunkedMemoryService:
                 del self._bm25_cache[collection_name]
 
             documents = [chunk.content for chunk in chunks]
-
-            documents = [chunk.content for chunk in chunks]
             metadatas = [chunk.metadata for chunk in chunks]
             ids = [
                 f"{strategy_name}_{idx}_{chunk.metadata.get('first_message_id', idx)}"
@@ -78,12 +246,8 @@ class ChunkedMemoryService:
                 strategy_name,
             )
             try:
-                embeddings = self.embedder.encode_batch(documents)
-                if embeddings and len(embeddings[0]) != self.embedder.dimension:
-                    raise ValueError(
-                        f"Embedding dimension mismatch: expected {self.embedder.dimension}, "
-                        f"got {len(embeddings[0])}"
-                    )
+                # Use batched embedding to avoid memory/rate limit issues
+                embeddings = await self._embed_in_batches(documents)
 
                 self.vector_store.add_documents(
                     collection_name=collection_name,
@@ -98,6 +262,52 @@ class ChunkedMemoryService:
             except Exception as exc:
                 self.logger.error("Error storing '%s' chunks: %s", strategy_name, exc)
                 raise
+
+    def _should_include_author(
+        self,
+        author: str,
+        exclude_blacklisted: bool,
+        filter_authors: Optional[List[str]]
+    ) -> bool:
+        """
+        Determine if a document should be included based on author.
+
+        Checks:
+        1. Blacklist filtering (if enabled)
+        2. Author whitelist filtering (if provided)
+
+        Args:
+            author: Author name/ID from document metadata
+            exclude_blacklisted: Whether to filter out blacklisted authors
+            filter_authors: Specific authors to include (None = include all)
+
+        Returns:
+            True if document should be INCLUDED, False if should be FILTERED OUT
+        """
+        # Check blacklist
+        if exclude_blacklisted:
+            # Check both string and int representations
+            if author in self.config.BLACKLIST_IDS or \
+               str(author) in [str(bid) for bid in self.config.BLACKLIST_IDS]:
+                self.logger.debug(f"Filtered out blacklisted author: {author}")
+                return False
+
+        # Check author whitelist
+        if filter_authors:
+            author_lower = author.lower()
+            # Check if author matches any in the filter list (case-insensitive, partial match)
+            matches = any(
+                fa.lower() in author_lower or author_lower in fa.lower()
+                for fa in filter_authors
+            )
+            if not matches:
+                self.logger.debug(
+                    f"Filtered out author {author} "
+                    f"(not in whitelist: {filter_authors})"
+                )
+                return False
+
+        return True
 
     def search(
         self,
@@ -173,21 +383,10 @@ class ChunkedMemoryService:
                     f"author={author}, content='{content_preview}'"
                 )
                 
-                # Check if author is blacklisted
-                if exclude_blacklisted:
-                    from config import Config
-                    if author in Config.BLACKLIST_IDS or str(author) in [str(bid) for bid in Config.BLACKLIST_IDS]:
-                        self.logger.info(f"  [FILTERED] Blacklisted author: {author}")
-                        continue
-                
-                # Check if we're filtering to specific authors
-                if filter_authors:
-                    # Normalize author for comparison (username and display name)
-                    author_lower = author.lower()
-                    # Check if author matches any of the filter authors (case-insensitive)
-                    if not any(fa.lower() in author_lower or author_lower in fa.lower() for fa in filter_authors):
-                        self.logger.info(f"  [FILTERED] Author {author} not in filter list {filter_authors}")
-                        continue
+                # Use helper method for author filtering
+                if not self._should_include_author(author, exclude_blacklisted, filter_authors):
+                    self.logger.info(f"  [FILTERED] Author: {author}")
+                    continue
                 
                 formatted_results.append(
                     {
@@ -276,16 +475,9 @@ class ChunkedMemoryService:
             metadata = doc_data['metadata']
             author = metadata.get('author', '')
 
-            # Apply filters
-            if exclude_blacklisted:
-                from config import Config
-                if author in Config.BLACKLIST_IDS or str(author) in [str(bid) for bid in Config.BLACKLIST_IDS]:
-                    continue
-
-            if filter_authors:
-                author_lower = author.lower()
-                if not any(fa.lower() in author_lower or author_lower in fa.lower() for fa in filter_authors):
-                    continue
+            # Apply filters using helper method
+            if not self._should_include_author(author, exclude_blacklisted, filter_authors):
+                continue
 
             results.append({
                 "content": document,
@@ -411,8 +603,7 @@ class ChunkedMemoryService:
         
         # Use configured default strategies if none specified
         if strategies is None:
-            from config import Config
-            default_strategies = Config.CHUNKING_DEFAULT_STRATEGIES.split(',')
+            default_strategies = self.config.CHUNKING_DEFAULT_STRATEGIES.split(',')
             strategies = [ChunkStrategy(s.strip()) for s in default_strategies]
             self.logger.info(f"Using default strategies: {[s.value for s in strategies]}")
         
@@ -533,7 +724,7 @@ class ChunkedMemoryService:
                             continue
                         
                         # Store chunks in vector DB
-                        self.store_all_strategies({strategy_name: valid_chunks})
+                        await self.store_all_strategies({strategy_name: valid_chunks})
                         
                         # Update statistics
                         strategy_stats['messages_processed'] += len(messages)
