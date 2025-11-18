@@ -198,11 +198,31 @@ class RAG(commands.Cog):
             else:
                 similarity_emoji = "🟠"  # Lower relevance
             
+            # Extract author - try multiple field names for compatibility
+            author = (
+                metadata.get('author') or 
+                metadata.get('primary_author_name') or 
+                metadata.get('primary_author_id') or 
+                'Unknown'
+            )
+            
+            # Extract timestamp - prefer first_timestamp, fallback to timestamp
+            timestamp = (
+                metadata.get('first_timestamp') or 
+                metadata.get('timestamp') or 
+                metadata.get('last_timestamp') or 
+                'Unknown'
+            )
+            
+            # Format timestamp for display (extract date part if full ISO format)
+            if timestamp != 'Unknown' and len(timestamp) > 10:
+                timestamp = timestamp[:10]  # Show just YYYY-MM-DD
+            
             embed.add_field(
                 name=f"{i}. {similarity_emoji} Similarity: {similarity:.3f}",
                 value=(
-                    f"**Author:** {metadata.get('author', 'Unknown')}\n"
-                    f"**Time:** {metadata.get('timestamp', 'Unknown')}\n"
+                    f"**Author:** {author}\n"
+                    f"**Time:** {timestamp}\n"
                     f"**Content:** {preview}"
                 ),
                 inline=False

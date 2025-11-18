@@ -258,9 +258,19 @@ class RAGPipeline:
             content = chunk.get('content', '')
             metadata = chunk.get('metadata', {})
             
-            # Extract metadata
-            timestamp = metadata.get('timestamp', 'Unknown time')
-            author = metadata.get('author', 'Unknown')
+            # Extract metadata - try multiple field names for compatibility
+            author = (
+                metadata.get('author') or 
+                metadata.get('primary_author_name') or 
+                metadata.get('primary_author_id') or 
+                'Unknown'
+            )
+            timestamp = (
+                metadata.get('first_timestamp') or 
+                metadata.get('timestamp') or 
+                metadata.get('last_timestamp') or 
+                'Unknown time'
+            )
             
             # Format with metadata
             formatted = f"[{timestamp}] {author}: {content}"
@@ -289,14 +299,17 @@ class RAGPipeline:
         """
         Create prompt for LLM with context and question.
         """
-        system_message = """You are a helpful discord bot that answers questions based on Discord conversation history.
+        system_message = """You are a helpful Discord bot that answers questions based on Discord conversation history.
 
         Instructions:
         - Answer ONLY using information from the provided context
-        - If the context doesn't contain enough information, say so
-        - Be concise and accurate
-        - Reference specific messages when relevant
+        - Write in a natural, conversational style like a Discord message
+        - Write as flowing paragraphs, NOT bullet points or lists
+        - If the context doesn't contain enough information, say so naturally
+        - When referencing information, mention the person's name and date naturally in the text (e.g., "Thomas mentioned on 2024-06-11 that...")
+        - Do NOT use bullet points, numbered lists, or structured formats
         - Do NOT make up information not in the context
+        - Write like you're explaining something to a friend in Discord chat
         """
 
         user_message = f"""Context from Discord conversations:
@@ -307,7 +320,7 @@ class RAGPipeline:
 
         Question: {question}
 
-        Answer:"""
+        Answer (write naturally as a Discord message, no bullet points):"""
 
         # Combine into single prompt (simple format for AIService)
         full_prompt = f"{system_message}\n\n{user_message}"

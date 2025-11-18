@@ -259,6 +259,7 @@ class IngestionService:
                             continue
                         
                         # Store chunks in vector DB
+                        # IMPORTANT: Only update checkpoint AFTER successful storage
                         await self.store_all_strategies({strategy_name: valid_chunks})
                         
                         # Update statistics
@@ -274,7 +275,8 @@ class IngestionService:
                         strategy_stats['last_message_id'] = last_processed_id
                         strategy_stats['last_timestamp'] = last_timestamp
                         
-                        # Update checkpoint
+                        # Update checkpoint ONLY after successful storage
+                        # This ensures checkpoint matches what's actually stored
                         last_chunk = valid_chunks[-1]
                         last_chunk_id = last_chunk.metadata.get('first_message_id', last_processed_id)
                         
