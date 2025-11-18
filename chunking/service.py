@@ -1,10 +1,12 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, TYPE_CHECKING
 from datetime import datetime
 import logging
 import re
 import tiktoken
-from config import Config
 from chunking.base import Chunk
+
+if TYPE_CHECKING:
+    from config import Config
 
 
 #TODO: for now only testing single chunking 
@@ -31,11 +33,15 @@ class ChunkingService:
     def __init__(
         self,
         temporal_window: int = None,
-        conversation_gap: int = None
+        conversation_gap: int = None,
+        config: Optional['Config'] = None
     ):
+        from config import Config as ConfigClass
+        
         self.logger = logging.getLogger(__name__)
-        self.temporal_window = temporal_window or Config.CHUNKING_TEMPORAL_WINDOW
-        self.conversation_gap = conversation_gap or Config.CHUNKING_CONVERSATION_GAP
+        self.config = config or ConfigClass
+        self.temporal_window = temporal_window or self.config.CHUNKING_TEMPORAL_WINDOW
+        self.conversation_gap = conversation_gap or self.config.CHUNKING_CONVERSATION_GAP
 
         self._tokenizer = None 
 
@@ -328,8 +334,8 @@ class ChunkingService:
         if not messages:
             return []
 
-        max_tokens = max_tokens or Config.CHUNKING_MAX_TOKENS
-        min_chunk_size = min_chunk_size or Config.CHUNKING_MIN_CHUNK_SIZE
+        max_tokens = max_tokens or self.config.CHUNKING_MAX_TOKENS
+        min_chunk_size = min_chunk_size or self.config.CHUNKING_MIN_CHUNK_SIZE
 
         sorted_messages = sorted(messages, key=lambda m: m.get('timestamp', ''))
         chunks = []
@@ -579,8 +585,8 @@ class ChunkingService:
         if not sorted_messages:
             return []
 
-        window_size = window_size or Config.CHUNKING_WINDOW_SIZE
-        overlap = overlap or Config.CHUNKING_OVERLAP
+        window_size = window_size or self.config.CHUNKING_WINDOW_SIZE
+        overlap = overlap or self.config.CHUNKING_OVERLAP
 
         if overlap >= window_size:
             self.logger.warning(

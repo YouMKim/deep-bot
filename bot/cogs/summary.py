@@ -21,12 +21,14 @@ class Summary(commands.Cog):
             bot: The Discord bot instance
             ai_provider: The AI provider to use ("openai" or "anthropic")
         """
+        from config import Config
+        
         self.bot = bot
         self.ai_service = AIService(provider_name=ai_provider)
-        from config import Config
-        self.chunked_memory_service = ChunkedMemoryService(config=Config)
+        self.config = Config
+        self.chunked_memory_service = ChunkedMemoryService(config=self.config)
         self.message_storage = MessageStorage()
-        self.message_loader = MessageLoader(self.message_storage)
+        self.message_loader = MessageLoader(self.message_storage, config=self.config)
         self.logger = logging.getLogger(__name__)
 
 

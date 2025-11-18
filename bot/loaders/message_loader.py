@@ -2,18 +2,23 @@ import discord
 from discord import HTTPException
 import asyncio
 import logging
-from typing import Callable, Optional, Dict, Any, List, Tuple
+from typing import Callable, Optional, Dict, Any, List, Tuple, TYPE_CHECKING
 from datetime import datetime
-from config import Config
 from storage.messages import MessageStorage
-from bot.utils.discord_utils import format_discord_message 
+from bot.utils.discord_utils import format_discord_message
+
+if TYPE_CHECKING:
+    from config import Config
 
 class MessageLoader: 
-    def __init__(self, message_storage: MessageStorage):
+    def __init__(self, message_storage: MessageStorage, config: Optional['Config'] = None):
+        from config import Config as ConfigClass
+        
         self.message_storage = message_storage
-        self.logger = logging.getLogger(__name__) 
-        self.rate_limit_delay = Config.MESSAGE_FETCH_DELAY
-        self.batch_size = Config.MESSAGE_FETCH_BATCH_SIZE
+        self.logger = logging.getLogger(__name__)
+        self.config = config or ConfigClass
+        self.rate_limit_delay = self.config.MESSAGE_FETCH_DELAY
+        self.batch_size = self.config.MESSAGE_FETCH_BATCH_SIZE
         self.progress_callback: Optional[Callable[[int, int], None]] = None
         
     def set_progress_callback(self, callback: Callable[[int, int], None]):
@@ -29,7 +34,7 @@ class MessageLoader:
             
             self.logger.warning(
                 f"Rate limited! Waiting {wait_time}s before retry "
-                f"(attempt {retry_count + 1}/{Config.MESSAGE_FETCH_MAX_RETRIES})"
+                f"(attempt {retry_count + 1}/{self.config.MESSAGE_FETCH_MAX_RETRIES})"
             )
             await asyncio.sleep(wait_time)
             return True  
@@ -84,7 +89,7 @@ class MessageLoader:
         elif not message.content.strip():
             stats["skipped_empty_messages"] += 1
             return True
-        elif message.content.startswith(Config.BOT_PREFIX):
+        elif message.content.startswith(self.config.BOT_PREFIX):
             stats["skipped_commands"] += 1
             return True 
         return False 
@@ -117,7 +122,7 @@ class MessageLoader:
         # This ensures users see progress even for small loads
         should_report = (
             stats["total_processed"] == 1 or  # Always report first message
-            stats["total_processed"] % Config.MESSAGE_FETCH_PROGRESS_INTERVAL == 0
+            stats["total_processed"] % self.config.MESSAGE_FETCH_PROGRESS_INTERVAL == 0
         )
         
         if not should_report:
@@ -165,7 +170,7 @@ class MessageLoader:
                 stats["rate_limit_errors"] += 1
                 retry_count += 1
                 
-                if retry_count >= Config.MESSAGE_FETCH_MAX_RETRIES:
+                if retry_count >= self.config.MESSAGE_FETCH_MAX_RETRIES:
                     self.logger.error(f"Max retries exceeded for #{channel_name} ({channel_id})")
                     return True, retry_count
                 return False, retry_count

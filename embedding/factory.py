@@ -1,5 +1,4 @@
 from typing import Optional
-from config import Config 
 from embedding.base import EmbeddingBase
 from embedding.openai import OpenAIEmbedder
 from embedding.sentence_transformer import SentenceTransformerEmbedder
