@@ -1,25 +1,33 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
-@dataclass 
+@dataclass
 class RAGConfig:
-    top_k: int = 10 
-    similarity_threshold: float = 0.35  
+    """
+    Configuration for RAG pipeline.
+
+    Note on similarity_threshold:
+    - Vector/BM25 search: Use 0.3-0.5 (default: 0.35)
+    - Hybrid search (RRF): Use 0.005-0.015 (RRF scores are much smaller)
+    - Reranking (cross-encoder): Use 0.5-2.0 (cross-encoder scores range from -10 to 10)
+    """
+    top_k: int = 10
+    similarity_threshold: float = 0.35
     max_context_tokens: int = 4000
     temperature: float = 0.7
-    strategy: str = "tokens" 
+    strategy: str = "tokens"
     use_hybrid_search: bool = False
     bm25_weight: float = 0.5
     vector_weight: float = 0.5
     model: Optional[str] = None
     show_sources: bool = False
-    filter_authors: Optional[List[str]] = None 
+    filter_authors: Optional[List[str]] = None
     use_multi_query: bool = False
     num_query_variations: int = 3
     use_hyde: bool = False
     use_reranking: bool = False
     reranking_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    
+
     def __post_init__(self):
         if self.top_k < 1:
             raise ValueError("top_k must be at least 1")
