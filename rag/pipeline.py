@@ -193,31 +193,52 @@ class RAGPipeline:
     ) -> List[Dict]:
         """
         Filter chunks below similarity threshold.
-        
-        Similarity scores:
+
+        Supports different scoring methods:
+        - ce_score: Cross-encoder reranking scores (highest priority)
+        - rrf_score: Reciprocal Rank Fusion scores (hybrid search)
+        - similarity: Standard vector/BM25 similarity scores
+
+        Similarity score ranges (vector/BM25):
         - 1.0 = identical match
         - 0.7-0.9 = very relevant
         - 0.5-0.7 = somewhat relevant
         - <0.5 = probably not relevant
+
+        RRF score ranges (hybrid search):
+        - ~0.016+ = very relevant (top results from both methods)
+        - ~0.008-0.016 = relevant
+        - <0.008 = less relevant
         """
-        self.logger.info(f"Applying similarity threshold: {threshold}")
-        
+        # Detect which scoring method was used
+        score_field = 'similarity'  # Default
+        if chunks and 'ce_score' in chunks[0]:
+            score_field = 'ce_score'
+            score_type = "cross-encoder"
+        elif chunks and 'rrf_score' in chunks[0]:
+            score_field = 'rrf_score'
+            score_type = "RRF"
+        else:
+            score_type = "similarity"
+
+        self.logger.info(f"Applying {score_type} threshold: {threshold} (using field: {score_field})")
+
         filtered = []
         for i, chunk in enumerate(chunks):
-            similarity = chunk.get('similarity', 0)
+            score = chunk.get(score_field, 0)
             content_preview = chunk.get('content', '')[:80] + "..."
-            
-            if similarity >= threshold:
-                self.logger.info(f"  [KEPT] Chunk {i+1}: {similarity:.3f} >= {threshold} - '{content_preview}'")
+
+            if score >= threshold:
+                self.logger.info(f"  [KEPT] Chunk {i+1}: {score:.3f} >= {threshold} - '{content_preview}'")
                 filtered.append(chunk)
             else:
-                self.logger.info(f"  [SKIP] Chunk {i+1}: {similarity:.3f} < {threshold} - '{content_preview}'")
-        
+                self.logger.info(f"  [SKIP] Chunk {i+1}: {score:.3f} < {threshold} - '{content_preview}'")
+
         self.logger.info(
-            f"Similarity filtering complete: {len(filtered)}/{len(chunks)} chunks passed "
+            f"{score_type.capitalize()} filtering complete: {len(filtered)}/{len(chunks)} chunks passed "
             f"(removed {len(chunks) - len(filtered)})"
         )
-        
+
         return filtered
 
     def _build_context_with_metadata(
