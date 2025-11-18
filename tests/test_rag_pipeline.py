@@ -49,8 +49,8 @@ class TestRAGConfig:
         """Should create config with default values"""
         config = RAGConfig()
         
-        assert config.top_k == 5
-        assert config.similarity_threshold == 0.5
+        assert config.top_k == 10
+        assert config.similarity_threshold == 0.35
         assert config.max_context_tokens == 4000
         assert config.temperature == 0.7
         assert config.strategy == "tokens"

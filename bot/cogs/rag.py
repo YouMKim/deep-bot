@@ -70,6 +70,56 @@ class RAG(commands.Cog):
             self.bot._rag_cache = getattr(self.bot, '_rag_cache', {})
             self.bot._rag_cache[message.id] = result
 
+    @commands.command(name='ask_hybrid')
+    async def ask_hybrid(self, ctx, *, question: str):
+        """
+        Ask a question using hybrid search (BM25 + vector).
+
+        Usage: !ask_hybrid What was decided about the database?
+        """
+        async with ctx.typing():
+            self.logger.info(f"User {ctx.author} asked (hybrid): {question}")
+
+            mentioned_users = []
+            if ctx.message.mentions:
+                mentioned_users = [user.display_name for user in ctx.message.mentions]
+
+            config = RAGConfig(
+                top_k=Config.RAG_DEFAULT_TOP_K,
+                similarity_threshold=Config.RAG_DEFAULT_SIMILARITY_THRESHOLD,
+                max_context_tokens=Config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
+                temperature=Config.RAG_DEFAULT_TEMPERATURE,
+                strategy=Config.RAG_DEFAULT_STRATEGY,
+                use_hybrid_search=True,  
+                bm25_weight=0.5,
+                vector_weight=0.5,
+                filter_authors=mentioned_users if mentioned_users else None,
+            )
+
+            result = await self.pipeline.answer_question(question, config)
+
+            title = "💡 Answer (Hybrid Search)"
+            if mentioned_users:
+                authors_str = ", ".join(mentioned_users)
+                title = f"💡 Answer (Hybrid - {authors_str})"
+
+            embed = discord.Embed(
+                title=title,
+                description=result.answer,
+                color=discord.Color.green()  
+            )
+
+            sources_count = len(result.sources) if result.sources else 0
+            embed.set_footer(
+                text=f"Model: {result.model} | Cost: ${result.cost:.4f} | {sources_count} sources"
+            )
+
+            message = await ctx.send(embed=embed)
+            await message.add_reaction("📚")
+
+            self.bot._rag_cache = getattr(self.bot, '_rag_cache', {})
+            self.bot._rag_cache[message.id] = result
+
 
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction, user):

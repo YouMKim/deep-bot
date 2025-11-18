@@ -7,10 +7,18 @@ class RAGConfig:
     similarity_threshold: float = 0.35  
     max_context_tokens: int = 4000
     temperature: float = 0.7
-    strategy: str = "tokens"  # tokens gives better results than single for semantic search
+    strategy: str = "tokens" 
+    use_hybrid_search: bool = False
+    bm25_weight: float = 0.5
+    vector_weight: float = 0.5
     model: Optional[str] = None
     show_sources: bool = False
     filter_authors: Optional[List[str]] = None 
+    use_multi_query: bool = False
+    num_query_variations: int = 3
+    use_hyde: bool = False
+    use_reranking: bool = False
+    reranking_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     
     def __post_init__(self):
         if self.top_k < 1:

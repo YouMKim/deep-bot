@@ -5,6 +5,9 @@ from ai.service import AIService
 from storage.messages.messages import MessageStorage
 from .models import RAGConfig, RAGResult
 from chunking.constants import ChunkStrategy
+from rag.query_enhancement import QueryEnhancementService
+from rag.hybrid_search import reciprocal_rank_fusion
+from rag.reranking import ReRankingService
 
 class RAGPipeline:
     
@@ -16,8 +19,10 @@ class RAGPipeline:
     ):
         self.chunked_memory = chunked_memory_service or ChunkedMemoryService()
         self.ai_service = ai_service or AIService()
+        self.query_enhancer = QueryEnhancementService(ai_service=self.ai_service)
         self.message_storage = message_storage or MessageStorage()
         self.logger = logging.getLogger(__name__)
+        self.reranker = None 
 
     async def answer_question(
         self,
@@ -96,27 +101,67 @@ class RAGPipeline:
         Retrieve relevant chunks using vector similarity search.
         
         How it works:
-        1. Embed the query (convert text → vector)
-        2. Search vector store (find similar vectors)
-        3. Return top_k most similar chunks
+        1. Check for multi-query (early return if enabled)
+        2. Embed the query (convert text → vector)
+        3. Search vector store (find similar vectors)
+        4. Re-rank if enabled (optional refinement)
+        5. Return top_k most similar chunks
         """
-        filter_info = f" (filtering to authors: {config.filter_authors})" if config.filter_authors else ""
-        self.logger.info(f"Retrieving top {config.top_k} chunks with strategy: {config.strategy}{filter_info}")
         
+        # Handle multi-query first (it does its own retrieval)
+        if config.use_multi_query:
+            return await self._retrieve_multi_query(query, config)
+        
+        filter_info = f" (filtering to authors: {config.filter_authors})" if config.filter_authors else ""
+        search_method = "hybrid" if config.use_hybrid_search else "vector"
+        self.logger.info(
+            f"Retrieving top {config.top_k} chunks with strategy: {config.strategy} "
+            f"using {search_method} search{filter_info}"
+        )
+
         try:
             strategy = ChunkStrategy(config.strategy)
         except ValueError:
             self.logger.warning(f"Invalid strategy '{config.strategy}', using default")
             strategy = ChunkStrategy.TOKENS
-        
-        chunks = self.chunked_memory.search(
-            query=query,
-            strategy=strategy,
-            top_k=config.top_k,
-            filter_authors=config.filter_authors,
-        )
-        
+
+        # Retrieve more candidates if reranking is enabled
+        # (reranker needs more options to choose from)
+        fetch_k = config.top_k * 3 if config.use_reranking else config.top_k
+
+        # Use hybrid search if enabled
+        if config.use_hybrid_search:
+            chunks = self.chunked_memory.search_hybrid(
+                query=query,
+                strategy=strategy,
+                top_k=fetch_k,  # Fetch more if reranking
+                bm25_weight=config.bm25_weight,
+                vector_weight=config.vector_weight,
+                filter_authors=config.filter_authors,
+            )
+        else:
+            # Standard vector search
+            chunks = self.chunked_memory.search(
+                query=query,
+                strategy=strategy,
+                top_k=fetch_k,  # Fetch more if reranking
+                filter_authors=config.filter_authors,
+            )
+
         self.logger.info(f"Retrieved {len(chunks)} chunks")
+        
+        # Re-rank if enabled (AFTER retrieval)
+        if config.use_reranking and chunks:
+            if self.reranker is None:
+                self.reranker = ReRankingService()
+
+            chunks = self.reranker.rerank(
+                query=query,
+                chunks=chunks,
+                top_k=config.top_k  # Return top_k after reranking
+            )
+            self.logger.info(f"Re-ranked to {len(chunks)} chunks")
+
         return chunks
 
     def _filter_by_similarity(
@@ -225,3 +270,60 @@ class RAGPipeline:
         full_prompt = f"{system_message}\n\n{user_message}"
         
         return full_prompt
+
+    async def _retrieve_multi_query(
+        self,
+        query: str,
+        config: RAGConfig
+    ) -> List[Dict]:
+        """
+        Retrieve using multiple query variations and fuse results.
+        """
+        # Generate query variations
+        queries = await self.query_enhancer.generate_multi_queries(
+            query,
+            num_queries=config.num_query_variations
+        )
+
+        self.logger.info(f"Retrieving with {len(queries)} query variations")
+
+        # Get strategy with fallback (same as in _retrieve_chunks)
+        try:
+            strategy = ChunkStrategy(config.strategy)
+        except ValueError:
+            self.logger.warning(f"Invalid strategy '{config.strategy}', using default")
+            strategy = ChunkStrategy.TOKENS
+
+        # Retrieve with each query
+        all_results = []
+        for q in queries:
+            if config.use_hybrid_search:
+                results = self.chunked_memory.search_hybrid(
+                    query=q,
+                    strategy=strategy,
+                    top_k=config.top_k * 2,  # Get more candidates
+                    filter_authors=config.filter_authors
+                )
+            else:
+                results = self.chunked_memory.search(
+                    query=q,
+                    strategy=strategy,
+                    top_k=config.top_k * 2,
+                    filter_authors=config.filter_authors
+                )
+
+            all_results.append(results)
+
+        # Fuse all results using RRF
+        fused_results = reciprocal_rank_fusion(
+            ranked_lists=all_results,
+            top_k=config.top_k
+        )
+
+        self.logger.info(
+            f"Multi-query fusion: {len(queries)} queries → "
+            f"{sum(len(r) for r in all_results)} total results → "
+            f"{len(fused_results)} fused results"
+        )
+
+        return fused_results
