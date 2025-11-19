@@ -315,9 +315,13 @@ class RAGPipeline:
         - Write as flowing paragraphs, NOT bullet points or lists
         - If the context doesn't contain enough information, say so naturally
         - When referencing information, mention the person's name and date naturally in the text (e.g., "Thomas mentioned on 2024-06-11 that...")
+        - Try to also group things mentioned by same person together or same topics together
         - Do NOT use bullet points, numbered lists, or structured formats
         - Do NOT make up information not in the context
         - Write like you're explaining something to a friend in Discord chat
+        - also put the information in chronological order from oldest to newest 
+        - also at the end if ideas connect or are disconnected you can combine them or summarize the results so that it follows more naturally
+        - At the very end clearly state that you are pulling outside information and do a 1-2 setntence evaluation of the discord chat.
         """
 
         user_message = f"""Context from Discord conversations:
