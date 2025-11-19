@@ -6,8 +6,6 @@ from ..models import AIRequest, AIResponse, TokenUsage, CostDetails
 
 
 class OpenAIProvider(BaseAIProvider):
-
-    # OpenAI pricing per 1K tokens (updated 2025 with GPT-5 models)
     # Source: https://openai.com/api/pricing/
     PRICING_TABLE = {
         # GPT-5 Series (Latest - 2025)

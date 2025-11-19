@@ -22,7 +22,7 @@ class AIService:
         Initialize AI service with a specific provider.
         
         Args:
-            provider_name: Either "openai" or "anthropic"
+            provider_name: Either "openai", "anthropic", or "gemini"
         """
         config = AIConfig(model_name=provider_name)
         self.provider = create_provider(config)
@@ -91,12 +91,13 @@ class AIService:
         This ensures consistent behavior across providers:
         - Temperature values 0-1 are treated as normalized (0% to 100% creativity)
         - Anthropic (0-1 range): uses value directly
+        - Gemini (0-1 range): uses value directly
         - OpenAI (0-2 range): scales value by 2x for equivalent creativity
         
         Examples:
-        - 0.7 → Anthropic: 0.7, OpenAI: 1.4 (both 70% of their range)
-        - 0.5 → Anthropic: 0.5, OpenAI: 1.0 (both 50% of their range)
-        - 1.5 → Anthropic: 1.0 (clamped), OpenAI: 1.5 (if >1, assume OpenAI scale)
+        - 0.7 → Anthropic: 0.7, Gemini: 0.7, OpenAI: 1.4 (both 70% of their range)
+        - 0.5 → Anthropic: 0.5, Gemini: 0.5, OpenAI: 1.0 (both 50% of their range)
+        - 1.5 → Anthropic: 1.0 (clamped), Gemini: 1.0 (clamped), OpenAI: 1.5 (if >1, assume OpenAI scale)
         
         Args:
             temperature: Requested temperature value (0-1 normalized or 0-2 OpenAI scale)
@@ -104,8 +105,8 @@ class AIService:
         Returns:
             Normalized and clamped temperature value for the current provider
         """
-        if self.provider_name == "anthropic":
-            # Anthropic only supports temperature 0-1
+        if self.provider_name in ["anthropic", "gemini"]:
+            # Anthropic and Gemini only support temperature 0-1
             # If value is > 1, assume it's in OpenAI scale, normalize to 0-1
             if temperature > 1.0:
                 normalized = temperature / 2.0  
@@ -131,6 +132,7 @@ class AIService:
             temperature: Model temperature (default: 0.7)
                        - Values 0-1 are normalized across providers for consistent behavior
                        - Anthropic: 0-1 range (0.7 = 70% creativity)
+                       - Gemini: 0-1 range (0.7 = 70% creativity)
                        - OpenAI: 0-2 range (0.7 → normalized to 1.4 = 70% creativity)
                        - Values >1 are assumed to be in OpenAI scale
                        - Automatically normalized and clamped per provider

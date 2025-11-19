@@ -8,7 +8,7 @@ from .models import (
     AIProvider,
 )
 from .base import BaseAIProvider
-from .providers import create_provider, OpenAIProvider, AnthropicProvider
+from .providers import create_provider, OpenAIProvider, AnthropicProvider, GeminiProvider
 from .service import AIService
 from .tracker import UserAITracker
 
@@ -23,6 +23,7 @@ __all__ = [
     "create_provider",
     "OpenAIProvider",
     "AnthropicProvider",
+    "GeminiProvider",
     "AIService",
     "UserAITracker",
 ]

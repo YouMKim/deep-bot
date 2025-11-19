@@ -1063,6 +1063,7 @@ class Admin(commands.Cog):
             !ai_provider - Show current provider
             !ai_provider openai - Switch to OpenAI
             !ai_provider anthropic - Switch to Anthropic
+            !ai_provider gemini - Switch to Gemini
         """
         # Manual owner check
         if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
@@ -1086,7 +1087,7 @@ class Admin(commands.Cog):
             # Add info about available providers
             embed.add_field(
                 name="Available Providers",
-                value="• `openai` - GPT models (fast, versatile)\n• `anthropic` - Claude models (advanced reasoning)",
+                value="• `openai` - GPT models (fast, versatile)\n• `anthropic` - Claude models (advanced reasoning)\n• `gemini` - Gemini models (Google AI)",
                 inline=False
             )
             
@@ -1102,8 +1103,8 @@ class Admin(commands.Cog):
             return
         
         # Validate provider
-        if provider.lower() not in ["openai", "anthropic"]:
-            await ctx.send("❌ Invalid provider. Use `openai` or `anthropic`")
+        if provider.lower() not in ["openai", "anthropic", "gemini"]:
+            await ctx.send("❌ Invalid provider. Use `openai`, `anthropic`, or `gemini`")
             return
         
         # Switch provider

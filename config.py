@@ -23,6 +23,9 @@ class Config:
 
     # OpenAI Configuration
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    
+    # Gemini Configuration
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
     # Bot Configuration
     BOT_PREFIX: str = os.getenv("BOT_PREFIX", "!")
