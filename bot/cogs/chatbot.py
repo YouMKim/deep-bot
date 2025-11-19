@@ -1,0 +1,621 @@
+"""
+Chatbot cog for conversational AI in Discord.
+
+Provides natural conversation capabilities with RAG-enhanced question answering.
+"""
+
+import discord
+from discord.ext import commands, tasks
+import logging
+from typing import List, Optional, Tuple
+from datetime import datetime
+
+from config import Config
+from ai.service import AIService
+from ai.tracker import UserAITracker
+from rag.pipeline import RAGPipeline
+from rag.models import RAGConfig
+from bot.utils.session_manager import SessionManager, RateLimiter
+
+logger = logging.getLogger(__name__)
+
+
+class Chatbot(commands.Cog):
+    """Chatbot cog for natural conversation with RAG support."""
+    
+    def __init__(self, bot):
+        self.bot = bot
+        self.config = Config
+        
+        # Initialize services
+        self.session_manager = SessionManager(
+            max_history=self.config.CHATBOT_MAX_HISTORY,
+            session_timeout=self.config.CHATBOT_SESSION_TIMEOUT,
+            max_context_tokens=self.config.RAG_DEFAULT_MAX_CONTEXT_TOKENS
+        )
+        
+        self.rate_limiter = RateLimiter(
+            max_messages=self.config.CHATBOT_RATE_LIMIT_MESSAGES,
+            window_seconds=self.config.CHATBOT_RATE_LIMIT_WINDOW
+        )
+        
+        self.ai_service = AIService(provider_name=self.config.AI_DEFAULT_PROVIDER)
+        self.rag_pipeline = RAGPipeline(config=self.config)
+        self.ai_tracker = UserAITracker()
+        
+        # Start background cleanup task
+        self.cleanup_sessions.start()
+        self.cleanup_rate_limits.start()
+        
+        logger.info("Chatbot cog initialized")
+    
+    def cog_unload(self):
+        """Clean up when cog is unloaded."""
+        self.cleanup_sessions.cancel()
+        self.cleanup_rate_limits.cancel()
+        logger.info("Chatbot cog unloaded")
+    
+    @tasks.loop(minutes=10)
+    async def cleanup_sessions(self):
+        """Remove expired sessions to free memory."""
+        await self.session_manager.cleanup_expired_sessions()
+        logger.debug("Cleaned up expired chatbot sessions")
+    
+    @cleanup_sessions.before_loop
+    async def before_cleanup_sessions(self):
+        """Wait until bot is ready before starting cleanup task."""
+        await self.bot.wait_until_ready()
+    
+    @tasks.loop(minutes=15)
+    async def cleanup_rate_limits(self):
+        """Clean up old rate limit entries."""
+        await self.rate_limiter.cleanup_old_entries()
+        logger.debug("Cleaned up old rate limit entries")
+    
+    @cleanup_rate_limits.before_loop
+    async def before_cleanup_rate_limits(self):
+        """Wait until bot is ready before starting cleanup task."""
+        await self.bot.wait_until_ready()
+    
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """Main chatbot event listener."""
+        # Skip if message is from bot
+        if message.author.bot:
+            return
+        
+        # Skip if message is a command
+        if message.content.startswith(self.config.BOT_PREFIX):
+            return
+        
+        # Check if message is in chatbot channel
+        if message.channel.id != self.config.CHATBOT_CHANNEL_ID:
+            return
+
+        
+        # Check rate limit
+        allowed, retry_after = await self.rate_limiter.check_rate_limit(message.author.id)
+        if not allowed:
+            minutes, seconds = divmod(int(retry_after), 60)
+            await message.channel.send(
+                f"⏰ {message.author.mention} Rate limit exceeded. "
+                f"Please wait {minutes}m {seconds}s before sending another message."
+            )
+            return
+        
+        # Process message
+        try:
+            async with message.channel.typing():
+                # React to show message received
+                try:
+                    await message.add_reaction("👀")
+                except discord.HTTPException:
+                    pass  # Ignore reaction errors
+                
+                # Get or create session
+                session = await self.session_manager.get_session(
+                    message.author.id,
+                    message.channel.id
+                )
+                
+                # Detect if message is a question
+                is_question = await self._is_question(message.content)
+                
+                # Extract mentions for potential RAG filtering
+                mentioned_users = self._extract_mentions(message)
+                
+                # Determine if RAG is needed (only for questions that need history search)
+                needs_rag = False
+                if is_question and self.config.CHATBOT_USE_RAG:
+                    needs_rag = await self._needs_rag(message.content, mentioned_users)
+                
+                # Generate response
+                if needs_rag:
+                    # Use RAG for questions about past conversations/events
+                    response = await self._generate_rag_response(
+                        message.content,
+                        message.author.id,
+                        mentioned_users,
+                        message.channel.id
+                    )
+                else:
+                    # Use conversational chat for everything else
+                    response = await self._generate_chat_response(
+                        message.content,
+                        message.author.id,
+                        message.channel.id
+                    )
+                
+                # Remove "eyes" reaction, add "check" reaction
+                try:
+                    await message.remove_reaction("👀", self.bot.user)
+                    await message.add_reaction("✅")
+                except discord.HTTPException:
+                    pass  # Ignore reaction errors
+                
+                # Send response
+                if response['content']:
+                    await message.channel.send(response['content'])
+                else:
+                    await message.channel.send(
+                        "❌ Sorry, I couldn't generate a response. Please try again."
+                    )
+                
+                # Update session history
+                await self.session_manager.add_message(
+                    message.author.id,
+                    "user",
+                    message.content
+                )
+                await self.session_manager.add_message(
+                    message.author.id,
+                    "assistant",
+                    response['content']
+                )
+                
+                # Track usage
+                user_display_name = message.author.display_name
+                self.ai_tracker.log_ai_usage(
+                    user_display_name=user_display_name,
+                    cost=response.get('cost', 0.0),
+                    tokens_total=response.get('tokens_total', 0)
+                )
+                
+        except discord.HTTPException as e:
+            logger.error(f"Discord API error in chatbot: {e}", exc_info=True)
+            await message.channel.send(
+                f"⚠️ {message.author.mention} Discord API error. Please try again."
+            )
+        except Exception as e:
+            logger.error(f"Chatbot error: {e}", exc_info=True)
+            await message.channel.send(
+                f"❌ Sorry {message.author.mention}, I encountered an error processing your message. "
+                f"Please try again or use `{self.config.BOT_PREFIX}chatbot_reset` to clear your session."
+            )
+    
+    async def _is_question(self, text: str) -> bool:
+        """
+        Detect if message is a question.
+        
+        Uses enhanced heuristics including:
+        - Question marks
+        - Question starters
+        - Question phrases
+        - Imperative questions
+        """
+        text_lower = text.lower().strip()
+        
+        # Direct question mark
+        if text_lower.endswith('?'):
+            return True
+        
+        # Question starters (comprehensive list)
+        question_starters = [
+            'what', 'when', 'where', 'who', 'why', 'how',
+            'did', 'does', 'is', 'are', 'was', 'were',
+            'can', 'could', 'would', 'should', 'will',
+            'has', 'have', 'had', 'do', 'does'
+        ]
+        
+        first_word = text_lower.split()[0] if text_lower.split() else ""
+        if first_word in question_starters:
+            return True
+        
+        # Question phrases
+        question_phrases = [
+            'tell me', 'explain', 'what about', 'how about',
+            'do you know', 'can you', 'could you', 'would you'
+        ]
+        for phrase in question_phrases:
+            if phrase in text_lower:
+                return True
+        
+        # Imperative questions (short commands like "Explain X", "Tell me about Y")
+        if len(text_lower.split()) <= 5:
+            imperative_words = ['explain', 'tell', 'describe', 'show']
+            if any(word in text_lower for word in imperative_words):
+                return True
+        
+        return False
+    
+    async def _needs_rag(self, text: str, mentioned_users: List[str] = None) -> bool:
+        """
+        Determine if a question requires RAG search vs. conversational response.
+        
+        RAG is needed for:
+        - Questions about past events/conversations
+        - Questions referencing specific people (with mentions or names)
+        - Questions with temporal references (yesterday, last week, etc.)
+        - Questions asking about decisions/plans made in Discord
+        - Questions with keywords suggesting history search
+        
+        RAG is NOT needed for:
+        - Greetings and small talk ("how are you", "what's up")
+        - General conversational questions
+        - Questions about the bot itself
+        
+        Args:
+            text: The question text
+            mentioned_users: List of mentioned users (if any)
+            
+        Returns:
+            True if RAG search is needed, False for conversational response
+        """
+        text_lower = text.lower().strip()
+        
+        # If users are mentioned, likely asking about their messages
+        if mentioned_users:
+            return True
+        
+        # Conversational patterns that DON'T need RAG
+        conversational_patterns = [
+            'how are you', 'how\'s it going', 'what\'s up', 'whats up',
+            'how do you do', 'how\'s everything', 'how are things',
+            'what are you doing', 'what do you do', 'what can you do',
+            'who are you', 'what are you', 'what is this', 'what is that',
+            'can you help', 'can you do', 'will you', 'would you',
+            'hi', 'hello', 'hey', 'greetings'
+        ]
+        
+        # Check if it's a simple conversational question
+        for pattern in conversational_patterns:
+            if pattern in text_lower:
+                # But allow if it has additional context suggesting RAG
+                if not any(keyword in text_lower for keyword in ['say', 'said', 'mention', 'discuss', 'decide', 'plan']):
+                    return False
+        
+        # Temporal references suggest asking about past events
+        temporal_keywords = [
+            'yesterday', 'last week', 'last month', 'earlier', 'before',
+            'previously', 'recently', 'earlier today', 'last time',
+            'did we', 'did they', 'did you', 'was there', 'were there'
+        ]
+        if any(keyword in text_lower for keyword in temporal_keywords):
+            return True
+        
+        # Keywords suggesting asking about Discord history
+        history_keywords = [
+            'say', 'said', 'mention', 'discuss', 'decide', 'decided',
+            'plan', 'planned', 'talk about', 'talked about',
+            'decide on', 'decided on', 'agree', 'agreed',
+            'conversation', 'discussion', 'meeting', 'call'
+        ]
+        if any(keyword in text_lower for keyword in history_keywords):
+            return True
+        
+        # Questions about specific people (names or pronouns in context)
+        # This is a simple heuristic - could be improved with NER
+        people_indicators = [
+            'what did', 'what did they', 'what did he', 'what did she',
+            'what did we', 'what did you', 'what did someone',
+            'who said', 'who mentioned', 'who discussed',
+            'did anyone', 'did somebody', 'did someone'
+        ]
+        if any(indicator in text_lower for indicator in people_indicators):
+            return True
+        
+        # Questions starting with "what" that are longer (likely specific questions)
+        # vs. short "what's up" type questions
+        if text_lower.startswith('what') and len(text_lower.split()) > 3:
+            # Check if it's asking about something specific
+            if any(word in text_lower for word in ['about', 'regarding', 'concerning', 'regarding']):
+                return True
+        
+        # Questions about decisions, plans, or outcomes
+        decision_keywords = [
+            'decide', 'decision', 'choose', 'chose', 'pick', 'picked',
+            'plan', 'planning', 'schedule', 'scheduled',
+            'agree', 'agreement', 'consensus', 'vote', 'voted'
+        ]
+        if any(keyword in text_lower for keyword in decision_keywords):
+            return True
+        
+        # Default: if it's a question but doesn't match conversational patterns,
+        # use chat mode (safer default - avoids unnecessary RAG searches)
+        return False
+    
+    def _extract_mentions(self, message: discord.Message) -> List[str]:
+        """
+        Extract mentioned users for RAG filtering.
+        
+        Returns list of display names for mentioned users.
+        """
+        return [user.display_name for user in message.mentions if not user.bot]
+    
+    async def _generate_rag_response(
+        self,
+        question: str,
+        user_id: int,
+        mentioned_users: Optional[List[str]] = None,
+        channel_id: Optional[int] = None
+    ) -> dict:
+        """
+        Use RAG pipeline to answer questions with context from past messages.
+        
+        Args:
+            question: User's question
+            user_id: User ID for tracking
+            mentioned_users: Optional list of @mentioned users to filter
+            channel_id: Optional channel ID for fallback context
+            
+        Returns:
+            dict with answer, sources, cost, etc.
+        """
+        try:
+            # Build RAG config
+            config = RAGConfig(
+                top_k=self.config.RAG_DEFAULT_TOP_K,
+                similarity_threshold=self.config.CHATBOT_RAG_THRESHOLD,
+                max_context_tokens=self.config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
+                temperature=self.config.CHATBOT_TEMPERATURE,
+                strategy=self.config.RAG_DEFAULT_STRATEGY,
+                filter_authors=mentioned_users if mentioned_users else None,
+                use_hybrid_search=self.config.RAG_USE_HYBRID_SEARCH,
+                use_multi_query=self.config.RAG_USE_MULTI_QUERY,
+                use_hyde=self.config.RAG_USE_HYDE,
+                use_reranking=self.config.RAG_USE_RERANKING,
+                max_output_tokens=self.config.CHATBOT_MAX_TOKENS,
+            )
+            
+            # Get answer from RAG pipeline
+            result = await self.rag_pipeline.answer_question(question, config)
+            
+            return {
+                'content': result.answer,
+                'sources': result.sources,
+                'cost': result.cost,
+                'model': result.model,
+                'tokens_total': result.tokens_used,
+                'mode': 'rag'
+            }
+        except Exception as e:
+            logger.error(f"RAG response generation error: {e}", exc_info=True)
+            # Fallback to chat mode on RAG error
+            return await self._generate_chat_response(question, user_id, channel_id)
+    
+    async def _get_recent_channel_context(self, channel_id: int, limit: int = 5) -> str:
+        """
+        Fetch recent messages from channel for additional context.
+        
+        Args:
+            channel_id: Discord channel ID
+            limit: Number of recent messages to include
+            
+        Returns:
+            Formatted string of recent messages
+        """
+        try:
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                return ""
+            
+            messages = []
+            async for msg in channel.history(limit=limit):
+                if not msg.author.bot and not msg.content.startswith(self.config.BOT_PREFIX):
+                    messages.append(f"{msg.author.display_name}: {msg.content}")
+            
+            messages.reverse()  # Chronological order
+            
+            if messages:
+                return "Recent channel context:\n" + "\n".join(messages) + "\n\n"
+            return ""
+        except Exception as e:
+            logger.warning(f"Error fetching channel context: {e}")
+            return ""
+    
+    async def _generate_chat_response(
+        self,
+        message: str,
+        user_id: int,
+        channel_id: Optional[int] = None
+    ) -> dict:
+        """
+        Generate conversational response using chat history.
+        
+        Args:
+            message: User's message
+            user_id: User ID for session tracking
+            channel_id: Optional channel ID for context
+            
+        Returns:
+            dict with content, cost, model, etc.
+        """
+        try:
+            # Get channel context if available
+            channel_context = ""
+            if channel_id:
+                channel_context = await self._get_recent_channel_context(
+                    channel_id,
+                    self.config.CHATBOT_INCLUDE_CONTEXT_MESSAGES
+                )
+            
+            # Format prompt with history
+            prompt = await self.session_manager.format_for_ai(
+                user_id,
+                message,
+                self.config.CHATBOT_SYSTEM_PROMPT,
+                channel_context
+            )
+            
+            # Generate response
+            result = await self.ai_service.generate(
+                prompt=prompt,
+                max_tokens=self.config.CHATBOT_MAX_TOKENS,
+                temperature=self.config.CHATBOT_TEMPERATURE
+            )
+            
+            return {
+                'content': result['content'],
+                'cost': result['cost'],
+                'model': result['model'],
+                'tokens_total': result['tokens_total'],
+                'mode': 'chat'
+            }
+        except Exception as e:
+            logger.error(f"Chat response generation error: {e}", exc_info=True)
+            return {
+                'content': "Sorry, I encountered an error generating a response.",
+                'cost': 0.0,
+                'model': 'error',
+                'tokens_total': 0,
+                'mode': 'chat'
+            }
+    
+    @commands.command(name='chatbot_reset', help='Reset your conversation history')
+    async def reset_conversation(self, ctx):
+        """Allow users to reset their conversation history."""
+        user_id = ctx.author.id
+        await self.session_manager.reset_session(user_id)
+        await ctx.send(f"✅ {ctx.author.mention} Your conversation history has been cleared!")
+    
+    @commands.command(name='chatbot_stats', help='View your chatbot usage statistics')
+    async def chatbot_stats(self, ctx):
+        """Show user's chatbot usage statistics."""
+        user_id = ctx.author.id
+        session = await self.session_manager.get_session(user_id, ctx.channel.id)
+        
+        embed = discord.Embed(
+            title=f"📊 Chatbot Statistics for {ctx.author.display_name}",
+            color=discord.Color.blue()
+        )
+        
+        message_count = len(session.get('messages', []))
+        created_at = session.get('created_at', 'N/A')
+        last_activity = session.get('last_activity', 'N/A')
+        
+        # Format datetime if it's a datetime object
+        if isinstance(created_at, datetime):
+            created_at = created_at.strftime("%Y-%m-%d %H:%M:%S")
+        elif isinstance(created_at, str):
+            try:
+                dt = datetime.fromisoformat(created_at)
+                created_at = dt.strftime("%Y-%m-%d %H:%M:%S")
+            except:
+                pass
+        
+        if isinstance(last_activity, datetime):
+            last_activity = last_activity.strftime("%Y-%m-%d %H:%M:%S")
+        elif isinstance(last_activity, str):
+            try:
+                dt = datetime.fromisoformat(last_activity)
+                last_activity = dt.strftime("%Y-%m-%d %H:%M:%S")
+            except:
+                pass
+        
+        embed.add_field(name="Messages in Session", value=str(message_count), inline=True)
+        embed.add_field(name="Session Started", value=str(created_at), inline=True)
+        embed.add_field(name="Last Activity", value=str(last_activity), inline=True)
+        
+        # Get user's total AI usage from tracker
+        stats = self.ai_tracker.get_user_stats(ctx.author.display_name)
+        
+        if stats:
+            embed.add_field(
+                name="Total Cost",
+                value=f"${stats['lifetime_cost']:.4f}",
+                inline=True
+            )
+            embed.add_field(
+                name="Total Tokens",
+                value=f"{stats['lifetime_tokens']:,}",
+                inline=True
+            )
+            embed.add_field(
+                name="Social Credit",
+                value=f"{stats['lifetime_credit']:.2f}",
+                inline=True
+            )
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command(name='chatbot_mode', help='Check current chatbot settings (Admin only)')
+    async def chatbot_mode(self, ctx):
+        """Display current chatbot configuration."""
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
+            await ctx.send("🚫 This command is admin-only!")
+            return
+        
+        embed = discord.Embed(
+            title="🤖 Chatbot Configuration",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="Channel ID",
+            value=str(self.config.CHATBOT_CHANNEL_ID),
+            inline=True
+        )
+        embed.add_field(
+            name="Max History",
+            value=str(self.config.CHATBOT_MAX_HISTORY),
+            inline=True
+        )
+        embed.add_field(
+            name="Session Timeout",
+            value=f"{self.config.CHATBOT_SESSION_TIMEOUT}s",
+            inline=True
+        )
+        embed.add_field(
+            name="Max Tokens",
+            value=str(self.config.CHATBOT_MAX_TOKENS),
+            inline=True
+        )
+        embed.add_field(
+            name="Temperature",
+            value=str(self.config.CHATBOT_TEMPERATURE),
+            inline=True
+        )
+        embed.add_field(
+            name="Use RAG",
+            value="✅" if self.config.CHATBOT_USE_RAG else "❌",
+            inline=True
+        )
+        embed.add_field(
+            name="RAG Threshold",
+            value=str(self.config.CHATBOT_RAG_THRESHOLD),
+            inline=True
+        )
+        embed.add_field(
+            name="Rate Limit",
+            value=f"{self.config.CHATBOT_RATE_LIMIT_MESSAGES}/min",
+            inline=True
+        )
+        embed.add_field(
+            name="AI Provider",
+            value=self.config.AI_DEFAULT_PROVIDER,
+            inline=True
+        )
+        
+        await ctx.send(embed=embed)
+
+
+async def setup(bot):
+    """Load the chatbot cog."""
+    # Validate chatbot config
+    if not Config.validate_chatbot_config():
+        logger.error("Chatbot configuration validation failed. Cog not loaded.")
+        return
+    
+    await bot.add_cog(Chatbot(bot))
+    logger.info("Chatbot cog loaded")
+

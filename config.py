@@ -79,6 +79,35 @@ class Config:
     RAG_USE_RERANKING: bool = os.getenv("RAG_USE_RERANKING", "True").lower() == "true"
     RAG_MAX_OUTPUT_TOKENS: int = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "1000"))
 
+    # Chatbot Configuration
+    CHATBOT_CHANNEL_ID: int = int(os.getenv("CHATBOT_CHANNEL_ID", "1440561306548703314"))
+    CHATBOT_MAX_HISTORY: int = int(os.getenv("CHATBOT_MAX_HISTORY", "15"))
+    CHATBOT_SESSION_TIMEOUT: int = int(os.getenv("CHATBOT_SESSION_TIMEOUT", "1800"))  # 30 minutes
+    CHATBOT_MAX_TOKENS: int = int(os.getenv("CHATBOT_MAX_TOKENS", "400"))
+    CHATBOT_TEMPERATURE: float = float(os.getenv("CHATBOT_TEMPERATURE", "0.8"))
+    CHATBOT_USE_RAG: bool = os.getenv("CHATBOT_USE_RAG", "True").lower() == "true"
+    CHATBOT_RAG_THRESHOLD: float = float(os.getenv("CHATBOT_RAG_THRESHOLD", "0.3"))
+    CHATBOT_RATE_LIMIT_MESSAGES: int = int(os.getenv("CHATBOT_RATE_LIMIT_MESSAGES", "10"))
+    CHATBOT_RATE_LIMIT_WINDOW: int = int(os.getenv("CHATBOT_RATE_LIMIT_WINDOW", "60"))
+    CHATBOT_INCLUDE_CONTEXT_MESSAGES: int = int(os.getenv("CHATBOT_INCLUDE_CONTEXT_MESSAGES", "5"))
+    AI_DEFAULT_PROVIDER: str = os.getenv("AI_DEFAULT_PROVIDER", "openai")
+
+    # Chatbot system prompt (defines personality)
+    CHATBOT_SYSTEM_PROMPT: str = os.getenv(
+        "CHATBOT_SYSTEM_PROMPT",
+        """You are a helpful Discord chatbot assistant named Deep-Bot. 
+You have access to past conversation history from this Discord server and can answer questions about what was discussed.
+
+Guidelines:
+- Be conversational, concise, and engaging (like a Discord message)
+- When answering factual questions, rely on the provided context from past messages
+- If you don't have enough context, say so politely
+- Keep responses under 400 tokens (roughly 300 words)
+- Use natural language, not bullet points or lists
+- Reference people by their Discord display names when mentioning past conversations
+- Be friendly but not overly casual"""
+    )
+
     @classmethod
     def load_blacklist(cls):
         """Load blacklisted user IDs from environment variable."""
@@ -189,3 +218,64 @@ class Config:
         import logging
         logger = logging.getLogger(__name__)
         logger.info("Reset all RAG settings to .env defaults")
+    
+    @classmethod
+    def validate_chatbot_config(cls) -> bool:
+        """
+        Validate chatbot configuration settings.
+        
+        Returns:
+            True if configuration is valid, False otherwise
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        errors = []
+        
+        # Validate channel ID
+        if not cls.CHATBOT_CHANNEL_ID or cls.CHATBOT_CHANNEL_ID <= 0:
+            errors.append("CHATBOT_CHANNEL_ID must be a positive integer")
+        
+        # Validate max history
+        if cls.CHATBOT_MAX_HISTORY < 1:
+            errors.append("CHATBOT_MAX_HISTORY must be >= 1")
+        
+        # Validate session timeout
+        if cls.CHATBOT_SESSION_TIMEOUT < 60:
+            errors.append("CHATBOT_SESSION_TIMEOUT must be >= 60 seconds")
+        
+        # Validate max tokens
+        if cls.CHATBOT_MAX_TOKENS < 50 or cls.CHATBOT_MAX_TOKENS > 2000:
+            errors.append("CHATBOT_MAX_TOKENS must be between 50 and 2000")
+        
+        # Validate temperature
+        if not 0.0 <= cls.CHATBOT_TEMPERATURE <= 2.0:
+            errors.append("CHATBOT_TEMPERATURE must be between 0.0 and 2.0")
+        
+        # Validate RAG threshold
+        if not 0.0 <= cls.CHATBOT_RAG_THRESHOLD <= 1.0:
+            errors.append("CHATBOT_RAG_THRESHOLD must be between 0.0 and 1.0")
+        
+        # Validate rate limit
+        if cls.CHATBOT_RATE_LIMIT_MESSAGES < 1:
+            errors.append("CHATBOT_RATE_LIMIT_MESSAGES must be >= 1")
+        
+        if cls.CHATBOT_RATE_LIMIT_WINDOW < 1:
+            errors.append("CHATBOT_RATE_LIMIT_WINDOW must be >= 1")
+        
+        # Validate context messages
+        if cls.CHATBOT_INCLUDE_CONTEXT_MESSAGES < 0:
+            errors.append("CHATBOT_INCLUDE_CONTEXT_MESSAGES must be >= 0")
+        
+        # Validate AI provider
+        valid_providers = ["openai", "anthropic", "gemini"]
+        if cls.AI_DEFAULT_PROVIDER not in valid_providers:
+            errors.append(f"AI_DEFAULT_PROVIDER must be one of: {', '.join(valid_providers)}")
+        
+        if errors:
+            for error in errors:
+                logger.error(f"Chatbot config validation error: {error}")
+            return False
+        
+        logger.info("Chatbot configuration validated successfully")
+        return True
