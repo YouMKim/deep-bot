@@ -1,8 +1,11 @@
 import time
+import logging
 from typing import Optional
 import google.generativeai as genai
 from ..base import BaseAIProvider
 from ..models import AIRequest, AIResponse, TokenUsage, CostDetails
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiProvider(BaseAIProvider):
@@ -33,7 +36,7 @@ class GeminiProvider(BaseAIProvider):
         self.client = genai.GenerativeModel
         self.default_model = default_model
     
-    async def complete(self, request: AIRequest) -> AIResponse:
+    async def complete(self, request: AIRequest, max_retries: int = 3) -> AIResponse:
         start_time = time.time()
         self.validate_request(request)
         model = request.model or self.default_model
@@ -48,21 +51,46 @@ class GeminiProvider(BaseAIProvider):
         if request.temperature is not None:
             generation_config["temperature"] = max(0.0, min(1.0, request.temperature))
         
-        try:
-            import asyncio
-            if generation_config:
-                response = await asyncio.to_thread(
-                    genai_model.generate_content,
-                    request.prompt,
-                    generation_config=generation_config
+        # Retry logic with exponential backoff
+        import asyncio
+        
+        for attempt in range(max_retries):
+            try:
+                if generation_config:
+                    response = await asyncio.to_thread(
+                        genai_model.generate_content,
+                        request.prompt,
+                        generation_config=generation_config
+                    )
+                else:
+                    response = await asyncio.to_thread(
+                        genai_model.generate_content,
+                        request.prompt
+                    )
+                break  # Success, exit retry loop
+            except Exception as e:
+                # Check if it's a rate limit error (429 or quota exceeded)
+                error_str = str(e).lower()
+                is_rate_limit = (
+                    "429" in error_str or
+                    "quota" in error_str or
+                    "rate limit" in error_str or
+                    "resource_exhausted" in error_str
                 )
-            else:
-                response = await asyncio.to_thread(
-                    genai_model.generate_content,
-                    request.prompt
-                )
-        except Exception as e:
-            raise Exception(f"Gemini API error: {e}")
+                
+                if is_rate_limit and attempt < max_retries - 1:
+                    # Calculate wait time: 1s, 2s, 4s (exponential backoff)
+                    wait_time = 2 ** attempt
+                    logger.warning(
+                        f"Gemini rate limit/quota exceeded (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {wait_time}s..."
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    # Non-retryable error or last attempt
+                    if attempt == max_retries - 1 and is_rate_limit:
+                        logger.error(f"Gemini rate limit exceeded after {max_retries} attempts")
+                    raise Exception(f"Gemini API error: {e}")
         
         latency_ms = (time.time() - start_time) * 1000
         

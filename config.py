@@ -66,7 +66,7 @@ class Config:
     EMBEDDING_BATCH_DELAY: float = float(os.getenv("EMBEDDING_BATCH_DELAY", "0.1"))  # Seconds to wait between batches (rate limiting)
 
     #RAG configs 
-    RAG_DEFAULT_TOP_K: int = int(os.getenv("RAG_DEFAULT_TOP_K", "10"))
+    RAG_DEFAULT_TOP_K: int = int(os.getenv("RAG_DEFAULT_TOP_K", "15"))
     RAG_DEFAULT_SIMILARITY_THRESHOLD: float = float(os.getenv("RAG_DEFAULT_SIMILARITY_THRESHOLD", "0.01"))
     RAG_DEFAULT_MAX_CONTEXT_TOKENS: int = int(os.getenv("RAG_DEFAULT_MAX_CONTEXT_TOKENS", "4000"))
     RAG_DEFAULT_TEMPERATURE: float = float(os.getenv("RAG_DEFAULT_TEMPERATURE", "0.7"))
@@ -80,13 +80,13 @@ class Config:
     RAG_MAX_OUTPUT_TOKENS: int = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "1000"))
 
     # Chatbot Configuration
-    CHATBOT_CHANNEL_ID: int = int(os.getenv("CHATBOT_CHANNEL_ID", "1440561306548703314"))
+    CHATBOT_CHANNEL_ID: int = int(os.getenv("CHATBOT_CHANNEL_ID", "0"))
     CHATBOT_MAX_HISTORY: int = int(os.getenv("CHATBOT_MAX_HISTORY", "15"))
     CHATBOT_SESSION_TIMEOUT: int = int(os.getenv("CHATBOT_SESSION_TIMEOUT", "1800"))  # 30 minutes
     CHATBOT_MAX_TOKENS: int = int(os.getenv("CHATBOT_MAX_TOKENS", "400"))
     CHATBOT_TEMPERATURE: float = float(os.getenv("CHATBOT_TEMPERATURE", "0.8"))
     CHATBOT_USE_RAG: bool = os.getenv("CHATBOT_USE_RAG", "True").lower() == "true"
-    CHATBOT_RAG_THRESHOLD: float = float(os.getenv("CHATBOT_RAG_THRESHOLD", "0.3"))
+    CHATBOT_RAG_THRESHOLD: float = float(os.getenv("CHATBOT_RAG_THRESHOLD", "0.01"))
     CHATBOT_RATE_LIMIT_MESSAGES: int = int(os.getenv("CHATBOT_RATE_LIMIT_MESSAGES", "10"))
     CHATBOT_RATE_LIMIT_WINDOW: int = int(os.getenv("CHATBOT_RATE_LIMIT_WINDOW", "60"))
     CHATBOT_INCLUDE_CONTEXT_MESSAGES: int = int(os.getenv("CHATBOT_INCLUDE_CONTEXT_MESSAGES", "5"))
@@ -115,16 +115,29 @@ Guidelines:
         logger = logging.getLogger(__name__)
         
         blacklist_str = os.getenv("BLACKLIST_IDS", "")
-        if blacklist_str:
-            # Split by comma and convert to integers
-            try:
-                cls.BLACKLIST_IDS = [int(id_str.strip()) for id_str in blacklist_str.split(",") if id_str.strip()]
-                print(f"✅ Loaded {len(cls.BLACKLIST_IDS)} blacklisted user IDs")
-            except ValueError as e:
-                print(f"❌ Error parsing BLACKLIST_IDS: {e}")
-                cls.BLACKLIST_IDS = []
-        else:
-            print("No blacklisted user IDs configured")
+        if not blacklist_str:
+            logger.info("No blacklisted user IDs configured")
+            cls.BLACKLIST_IDS = []
+            return
+        
+        try:
+            ids = []
+            for id_str in blacklist_str.split(","):
+                id_str = id_str.strip()
+                if id_str:
+                    user_id = int(id_str)
+                    if user_id <= 0:
+                        logger.warning(f"Invalid blacklist ID (must be positive): {user_id}")
+                        continue
+                    ids.append(user_id)
+            
+            cls.BLACKLIST_IDS = ids
+            logger.info(f"Loaded {len(cls.BLACKLIST_IDS)} blacklisted user IDs")
+            print(f"✅ Loaded {len(cls.BLACKLIST_IDS)} blacklisted user IDs")
+        except ValueError as e:
+            logger.error(f"Error parsing BLACKLIST_IDS: {e}")
+            print(f"❌ Error parsing BLACKLIST_IDS: {e}")
+            raise ValueError(f"Invalid BLACKLIST_IDS format. Expected comma-separated integers. Error: {e}")
     
     @classmethod
     def is_blacklisted(cls, user_id: int) -> bool:
@@ -232,9 +245,9 @@ Guidelines:
         
         errors = []
         
-        # Validate channel ID
+        # Validate channel ID - must be explicitly configured
         if not cls.CHATBOT_CHANNEL_ID or cls.CHATBOT_CHANNEL_ID <= 0:
-            errors.append("CHATBOT_CHANNEL_ID must be a positive integer")
+            errors.append("CHATBOT_CHANNEL_ID must be configured in .env file (must be a positive integer)")
         
         # Validate max history
         if cls.CHATBOT_MAX_HISTORY < 1:

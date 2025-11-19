@@ -50,7 +50,7 @@ class TestRAGConfig:
         config = RAGConfig()
         
         assert config.top_k == 10
-        assert config.similarity_threshold == 0.35
+        assert config.similarity_threshold == 0.01
         assert config.max_context_tokens == 4000
         assert config.temperature == 0.7
         assert config.strategy == "tokens"
@@ -328,7 +328,7 @@ class TestRetrieveChunks:
     async def test_retrieve_chunks_success(self, mock_chunks):
         """Should retrieve chunks from memory service"""
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=mock_chunks)
+        mock_memory.search = AsyncMock(return_value=mock_chunks)
         
         pipeline = RAGPipeline(chunked_memory_service=mock_memory)
         
@@ -349,7 +349,7 @@ class TestRetrieveChunks:
     async def test_retrieve_chunks_invalid_strategy(self, mock_chunks):
         """Should fallback to default strategy for invalid strategy"""
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=mock_chunks)
+        mock_memory.search = AsyncMock(return_value=mock_chunks)
         
         pipeline = RAGPipeline(chunked_memory_service=mock_memory)
         
@@ -370,7 +370,7 @@ class TestFullPipeline:
         """Should successfully answer with mocked dependencies"""
         # Mock ChunkedMemoryService
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=mock_chunks)
+        mock_memory.search = AsyncMock(return_value=mock_chunks)
         
         # Mock AIService
         mock_ai = MagicMock()
@@ -417,7 +417,7 @@ class TestFullPipeline:
     async def test_answer_question_no_results(self):
         """Should handle case with no search results"""
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=[])
+        mock_memory.search = AsyncMock(return_value=[])
         
         pipeline = RAGPipeline(chunked_memory_service=mock_memory)
         
@@ -440,14 +440,14 @@ class TestFullPipeline:
         ]
         
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=low_similarity_chunks)
+        mock_memory.search = AsyncMock(return_value=low_similarity_chunks)
         
         pipeline = RAGPipeline(chunked_memory_service=mock_memory)
         
         # High threshold filters all chunks (0.3 < 0.9)
         config = RAGConfig(similarity_threshold=0.9)
         
-        result = await pipeline.answer_question("Test")
+        result = await pipeline.answer_question("Test", config)
         
         # With high threshold, no chunks pass filtering
         assert "couldn't find" in result.answer.lower()
@@ -458,7 +458,7 @@ class TestFullPipeline:
     async def test_answer_question_with_default_config(self, mock_chunks):
         """Should work with default config"""
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=mock_chunks)
+        mock_memory.search = AsyncMock(return_value=mock_chunks)
         
         mock_ai = MagicMock()
         mock_ai.generate = AsyncMock(return_value={
@@ -483,7 +483,7 @@ class TestFullPipeline:
     async def test_answer_question_error_handling(self, mock_chunks):
         """Should handle errors gracefully"""
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=mock_chunks)
+        mock_memory.search = AsyncMock(return_value=mock_chunks)
         
         mock_ai = MagicMock()
         # Simulate AI service error
@@ -505,7 +505,7 @@ class TestFullPipeline:
     async def test_context_sent_to_llm(self, mock_chunks):
         """Should send formatted context to LLM"""
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=mock_chunks)
+        mock_memory.search = AsyncMock(return_value=mock_chunks)
         
         mock_ai = MagicMock()
         mock_ai.generate = AsyncMock(return_value={
@@ -536,7 +536,8 @@ class TestFullPipeline:
 class TestAuthorFiltering:
     """Test author filtering in search"""
     
-    def test_search_filter_to_specific_authors(self):
+    @pytest.mark.asyncio
+    async def test_search_filter_to_specific_authors(self):
         """Should only return chunks from specified authors"""
         from storage.chunked_memory import ChunkedMemoryService
         
@@ -571,6 +572,7 @@ class TestAuthorFiltering:
         })
         
         mock_embedder = MagicMock()
+        # Mock encode to return synchronously since we're using run_in_executor
         mock_embedder.encode = MagicMock(return_value=[0.1, 0.2, 0.3])
         
         service = ChunkedMemoryService(
@@ -579,14 +581,15 @@ class TestAuthorFiltering:
         )
         
         # Filter to only Alice's messages
-        results = service.search("test query", top_k=5, filter_authors=['Alice'])
+        results = await service.search("test query", top_k=5, filter_authors=['Alice'])
         
         # Should only return Alice's messages
         assert len(results) == 2
         for result in results:
             assert result['metadata']['author'] == 'Alice'
     
-    def test_search_filter_multiple_authors(self):
+    @pytest.mark.asyncio
+    async def test_search_filter_multiple_authors(self):
         """Should return chunks from any of the specified authors"""
         from storage.chunked_memory import ChunkedMemoryService
         
@@ -612,7 +615,7 @@ class TestAuthorFiltering:
         )
         
         # Filter to Alice and Charlie
-        results = service.search("test", top_k=5, filter_authors=['Alice', 'Charlie'])
+        results = await service.search("test", top_k=5, filter_authors=['Alice', 'Charlie'])
         
         assert len(results) == 2
         authors = [r['metadata']['author'] for r in results]
@@ -620,7 +623,8 @@ class TestAuthorFiltering:
         assert 'Charlie' in authors
         assert 'Bob' not in authors
     
-    def test_search_filter_case_insensitive(self):
+    @pytest.mark.asyncio
+    async def test_search_filter_case_insensitive(self):
         """Should filter authors case-insensitively"""
         from storage.chunked_memory import ChunkedMemoryService
         
@@ -645,7 +649,7 @@ class TestAuthorFiltering:
         )
         
         # Search with different case
-        results = service.search("test", top_k=5, filter_authors=['alice', 'BOB'])
+        results = await service.search("test", top_k=5, filter_authors=['alice', 'BOB'])
         
         # Should match both despite different casing
         assert len(results) == 2
@@ -654,7 +658,8 @@ class TestAuthorFiltering:
 class TestBlacklistFiltering:
     """Test blacklist filtering in search"""
     
-    def test_search_excludes_blacklisted_authors(self):
+    @pytest.mark.asyncio
+    async def test_search_excludes_blacklisted_authors(self):
         """Should filter out chunks from blacklisted authors"""
         from storage.chunked_memory import ChunkedMemoryService
         from unittest.mock import Mock
@@ -699,7 +704,7 @@ class TestBlacklistFiltering:
             config=mock_config  # ✅ Use mock config instead of modifying real one
         )
         
-        results = service.search("test query", top_k=5, exclude_blacklisted=True)
+        results = await service.search("test query", top_k=5, exclude_blacklisted=True)
         
         # Should only include non-blacklisted authors
         assert len(results) == 2
@@ -709,7 +714,8 @@ class TestBlacklistFiltering:
         assert 'BlacklistedUser' not in authors
         # ✅ No need to restore - we never modified real Config!
     
-    def test_search_with_blacklist_disabled(self):
+    @pytest.mark.asyncio
+    async def test_search_with_blacklist_disabled(self):
         """Should include all chunks when blacklist filtering is disabled"""
         from storage.chunked_memory import ChunkedMemoryService
         from config import Config
@@ -746,7 +752,7 @@ class TestBlacklistFiltering:
                 embedder=mock_embedder
             )
             
-            results = service.search("test query", top_k=5, exclude_blacklisted=False)
+            results = await service.search("test query", top_k=5, exclude_blacklisted=False)
             
             # Should include all chunks including blacklisted
             assert len(results) == 2
@@ -774,7 +780,7 @@ class TestEdgeCases:
         }
         
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=[long_chunk])
+        mock_memory.search = AsyncMock(return_value=[long_chunk])
         
         mock_ai = MagicMock()
         mock_ai.generate = AsyncMock(return_value={

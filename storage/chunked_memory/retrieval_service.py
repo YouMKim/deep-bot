@@ -46,7 +46,7 @@ class RetrievalService:
         self.config = config or ConfigClass
         self.logger = logging.getLogger(__name__)
 
-    def search(
+    async def search(
         self,
         query: str,
         strategy: Optional[ChunkStrategy] = None,
@@ -73,7 +73,10 @@ class RetrievalService:
         collection_name = get_collection_name(strategy_value)
 
         try:
-            query_embedding = self.embedder.encode(query)
+            # Run embedding in executor to avoid blocking event loop
+            import asyncio
+            loop = asyncio.get_event_loop()
+            query_embedding = await loop.run_in_executor(None, self.embedder.encode, query)
         except Exception as exc:
             self.logger.error("Failed to generate query embedding: %s", exc)
             raise
@@ -156,7 +159,7 @@ class RetrievalService:
         self.logger.info(f"Final results: {len(formatted_results)} chunks returned (top_k={top_k})")
         return formatted_results
 
-    def search_hybrid(
+    async def search_hybrid(
         self,
         query: str,
         strategy: Optional[ChunkStrategy] = None,
@@ -199,7 +202,7 @@ class RetrievalService:
         )
 
         # Vector search
-        vector_results = self.search(
+        vector_results = await self.search(
             query=query,
             strategy=strategy,
             active_strategy=active_strategy,

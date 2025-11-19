@@ -73,6 +73,19 @@ class SessionManager:
         Returns:
             Session dictionary
         """
+        # Force cleanup if too many sessions (prevent memory issues)
+        MAX_SESSIONS = 1000
+        async with self._lock:
+            if len(self.sessions) > MAX_SESSIONS:
+                logger.warning(f"Session count ({len(self.sessions)}) exceeds limit, forcing cleanup")
+                # Note: We can't await here because we're holding _lock, so we'll do it after
+                needs_cleanup = True
+            else:
+                needs_cleanup = False
+        
+        if needs_cleanup:
+            await self.cleanup_expired_sessions()
+        
         lock = await self._get_lock(channel_id)
         async with lock:
             if channel_id not in self.sessions:

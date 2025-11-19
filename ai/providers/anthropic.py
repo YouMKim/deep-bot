@@ -1,10 +1,13 @@
 import time
 import asyncio
+import logging
 from typing import Optional
 from anthropic import AsyncAnthropic
 
 from ..base import BaseAIProvider
 from ..models import AIRequest, AIResponse, TokenUsage, CostDetails
+
+logger = logging.getLogger(__name__)
 
 
 class AnthropicProvider(BaseAIProvider):
@@ -34,7 +37,7 @@ class AnthropicProvider(BaseAIProvider):
         self.client = AsyncAnthropic(api_key=api_key)
         self.default_model = default_model
     
-    async def complete(self, request: AIRequest) -> AIResponse:
+    async def complete(self, request: AIRequest, max_retries: int = 3) -> AIResponse:
         start_time = time.time()
         self.validate_request(request)
         model = request.model or self.default_model
