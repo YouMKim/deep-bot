@@ -1,6 +1,7 @@
 import time
+import asyncio
 import logging
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError, APIError
 from typing import Optional
 from ..base import BaseAIProvider
 from ..models import AIRequest, AIResponse, TokenUsage, CostDetails
@@ -53,11 +54,18 @@ class OpenAIProvider(BaseAIProvider):
             "messages": [{"role": "user", "content": request.prompt}],
         }
         
-        # GPT-5 models use max_completion_tokens instead of max_tokens
+        # GPT-5 models REQUIRE max_completion_tokens (max_tokens is not supported)
+        # CRITICAL BUG: GPT-5 returns empty content when hitting max_completion_tokens limit
+        # Workaround: Use a fixed very high limit (16000) so responses almost never hit it
+        # The bug only triggers when hitting the exact limit, so we set it extremely high
+        # Most responses are 100-1000 tokens, so 16000 is safe and avoids the bug
         is_gpt5 = model.startswith("gpt-5") or "gpt-5" in model
         if request.max_tokens:
             if is_gpt5:
-                params["max_completion_tokens"] = request.max_tokens
+                # GPT-5 bug workaround: Use fixed high limit (16000 tokens) regardless of request
+                # This ensures responses complete naturally before hitting the limit
+                # Only extremely long responses (>16000 tokens) will hit it (very rare)
+                params["max_completion_tokens"] = 16000  # Fixed high limit to avoid bug
             else:
                 params["max_tokens"] = request.max_tokens
         
@@ -68,8 +76,6 @@ class OpenAIProvider(BaseAIProvider):
         # For GPT-5, temperature is always 1 (default), so we don't set it
         
         # Retry logic with exponential backoff
-        import asyncio
-        from openai import RateLimitError, APIError
         
         for attempt in range(max_retries):
             try:
@@ -111,7 +117,24 @@ class OpenAIProvider(BaseAIProvider):
         cost = self.calculate_cost(model, usage)
         
         # Handle empty content (can happen with GPT-5 models)
-        content = response.choices[0].message.content or ""
+        if not response.choices or len(response.choices) == 0:
+            logger.error(f"[OpenAI] API returned no choices! Model: {model}, Response ID: {response.id}, Usage: {usage}")
+            raise Exception(f"OpenAI API returned no choices in response for model {model}")
+        
+        choice = response.choices[0]
+        content = choice.message.content or ""
+        
+        if not content and usage.completion_tokens > 0:
+            logger.error(f"Empty content returned but {usage.completion_tokens} completion tokens used. "
+                        f"Model: {model}, Finish reason: {choice.finish_reason}")
+            # If we hit the limit and got empty content, this is a known GPT-5 bug
+            if choice.finish_reason == 'length' and is_gpt5:
+                # Return a fallback message instead of raising an error
+                content = (
+                    "⚠️ I encountered a technical issue generating a response. "
+                    "This appears to be a bug with the GPT-5 model. Please try again or rephrase your question."
+                )
+                logger.warning("Using fallback message due to GPT-5 empty content bug")
         
         return AIResponse(
             content=content,
@@ -120,7 +143,7 @@ class OpenAIProvider(BaseAIProvider):
             cost=cost,
             latency_ms=latency_ms,
             metadata={
-                "finish_reason": response.choices[0].finish_reason,
+                "finish_reason": choice.finish_reason,
                 "request_id": response.id,
             }
         )

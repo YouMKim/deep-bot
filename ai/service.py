@@ -1,5 +1,8 @@
+import logging
 from .models import AIConfig, AIRequest
 from .providers import create_provider
+
+logger = logging.getLogger(__name__)
 
 class AIService:
     PROMPT_STYLES = {
@@ -150,6 +153,9 @@ class AIService:
         )
         
         response = await self.provider.complete(request)
+        
+        if not response.content:
+            logger.warning(f"Provider returned empty content: model={response.model}, finish_reason={response.metadata.get('finish_reason') if hasattr(response, 'metadata') else 'unknown'}")
         
         return {
             "content": response.content,
