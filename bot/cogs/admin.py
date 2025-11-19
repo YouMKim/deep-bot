@@ -862,12 +862,12 @@ class Admin(commands.Cog):
             embed.add_field(
                 name="Default Values",
                 value=(
-                    "• Hybrid Search: ❌ Disabled\n"
-                    "• Multi-Query: ❌ Disabled\n"
-                    "• HyDE: ❌ Disabled\n"
-                    "• Reranking: ❌ Disabled\n"
+                    "• Hybrid Search: ✅ Enabled\n"
+                    "• Multi-Query: ✅ Enabled\n"
+                    "• HyDE: ✅ Enabled\n"
+                    "• Reranking: ✅ Enabled\n"
                     "• Max Output Tokens: 1000\n"
-                    "• Default Strategy: tokens"
+                    "• Default Strategy: author"
                 ),
                 inline=False
             )

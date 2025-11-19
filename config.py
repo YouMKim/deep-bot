@@ -67,13 +67,13 @@ class Config:
     RAG_DEFAULT_SIMILARITY_THRESHOLD: float = float(os.getenv("RAG_DEFAULT_SIMILARITY_THRESHOLD", "0.01"))
     RAG_DEFAULT_MAX_CONTEXT_TOKENS: int = int(os.getenv("RAG_DEFAULT_MAX_CONTEXT_TOKENS", "4000"))
     RAG_DEFAULT_TEMPERATURE: float = float(os.getenv("RAG_DEFAULT_TEMPERATURE", "0.7"))
-    RAG_DEFAULT_STRATEGY: str = os.getenv("RAG_DEFAULT_STRATEGY", "tokens")
+    RAG_DEFAULT_STRATEGY: str = os.getenv("RAG_DEFAULT_STRATEGY", "author")
     
-    # RAG Technique Settings
-    RAG_USE_HYBRID_SEARCH: bool = os.getenv("RAG_USE_HYBRID_SEARCH", "False").lower() == "true"
-    RAG_USE_MULTI_QUERY: bool = os.getenv("RAG_USE_MULTI_QUERY", "False").lower() == "true"
-    RAG_USE_HYDE: bool = os.getenv("RAG_USE_HYDE", "False").lower() == "true"
-    RAG_USE_RERANKING: bool = os.getenv("RAG_USE_RERANKING", "False").lower() == "true"
+    # RAG Technique Settings (all enabled by default)
+    RAG_USE_HYBRID_SEARCH: bool = os.getenv("RAG_USE_HYBRID_SEARCH", "True").lower() == "true"
+    RAG_USE_MULTI_QUERY: bool = os.getenv("RAG_USE_MULTI_QUERY", "True").lower() == "true"
+    RAG_USE_HYDE: bool = os.getenv("RAG_USE_HYDE", "True").lower() == "true"
+    RAG_USE_RERANKING: bool = os.getenv("RAG_USE_RERANKING", "True").lower() == "true"
     RAG_MAX_OUTPUT_TOKENS: int = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "1000"))
 
     @classmethod
@@ -176,12 +176,12 @@ class Config:
     def reset_rag_settings(cls) -> None:
         """Reset all RAG settings to .env defaults (in-memory only)."""
         # Reload from environment variables
-        cls.RAG_USE_HYBRID_SEARCH = os.getenv("RAG_USE_HYBRID_SEARCH", "False").lower() == "true"
-        cls.RAG_USE_MULTI_QUERY = os.getenv("RAG_USE_MULTI_QUERY", "False").lower() == "true"
-        cls.RAG_USE_HYDE = os.getenv("RAG_USE_HYDE", "False").lower() == "true"
-        cls.RAG_USE_RERANKING = os.getenv("RAG_USE_RERANKING", "False").lower() == "true"
+        cls.RAG_USE_HYBRID_SEARCH = os.getenv("RAG_USE_HYBRID_SEARCH", "True").lower() == "true"
+        cls.RAG_USE_MULTI_QUERY = os.getenv("RAG_USE_MULTI_QUERY", "True").lower() == "true"
+        cls.RAG_USE_HYDE = os.getenv("RAG_USE_HYDE", "True").lower() == "true"
+        cls.RAG_USE_RERANKING = os.getenv("RAG_USE_RERANKING", "True").lower() == "true"
         cls.RAG_MAX_OUTPUT_TOKENS = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "1000"))
-        cls.RAG_DEFAULT_STRATEGY = os.getenv("RAG_DEFAULT_STRATEGY", "tokens")
+        cls.RAG_DEFAULT_STRATEGY = os.getenv("RAG_DEFAULT_STRATEGY", "author")
         
         import logging
         logger = logging.getLogger(__name__)
