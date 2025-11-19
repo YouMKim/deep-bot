@@ -117,6 +117,9 @@ class RetrievalService:
                     ''
                 )
                 
+                # Get author_id separately for blacklist checking
+                author_id = metadata.get('primary_author_id') or metadata.get('author_id') or None
+                
                 similarity = (
                     1 - distance_list[index]
                     if index < len(distance_list)
@@ -127,12 +130,12 @@ class RetrievalService:
                 content_preview = document[:100] + "..." if len(document) > 100 else document
                 self.logger.info(
                     f"Chunk {index + 1}: similarity={similarity:.3f}, "
-                    f"author={author}, content='{content_preview}'"
+                    f"author={author}, author_id={author_id}, content='{content_preview}'"
                 )
                 
-                # Use helper method for author filtering
-                if not self.author_filter.should_include(author, exclude_blacklisted, filter_authors):
-                    self.logger.info(f"  [FILTERED] Author: {author}")
+                # Use helper method for author filtering (pass author_id for blacklist check)
+                if not self.author_filter.should_include(author, exclude_blacklisted, filter_authors, author_id=author_id):
+                    self.logger.info(f"  [FILTERED] Author: {author} (ID: {author_id})")
                     continue
                 
                 formatted_results.append(

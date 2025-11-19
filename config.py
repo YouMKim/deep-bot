@@ -64,7 +64,7 @@ class Config:
 
     #RAG configs 
     RAG_DEFAULT_TOP_K: int = int(os.getenv("RAG_DEFAULT_TOP_K", "10"))
-    RAG_DEFAULT_SIMILARITY_THRESHOLD: float = float(os.getenv("RAG_DEFAULT_SIMILARITY_THRESHOLD", "0.35"))
+    RAG_DEFAULT_SIMILARITY_THRESHOLD: float = float(os.getenv("RAG_DEFAULT_SIMILARITY_THRESHOLD", "0.01"))
     RAG_DEFAULT_MAX_CONTEXT_TOKENS: int = int(os.getenv("RAG_DEFAULT_MAX_CONTEXT_TOKENS", "4000"))
     RAG_DEFAULT_TEMPERATURE: float = float(os.getenv("RAG_DEFAULT_TEMPERATURE", "0.7"))
     RAG_DEFAULT_STRATEGY: str = os.getenv("RAG_DEFAULT_STRATEGY", "tokens")

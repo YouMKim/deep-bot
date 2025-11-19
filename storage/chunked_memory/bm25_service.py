@@ -129,9 +129,12 @@ class BM25Service:
                 metadata.get('primary_author_id') or 
                 ''
             )
+            
+            # Get author_id separately for blacklist checking
+            author_id = metadata.get('primary_author_id') or metadata.get('author_id') or None
 
-            # Apply filters using helper method
-            if not self.author_filter.should_include(author, exclude_blacklisted, filter_authors):
+            # Apply filters using helper method (pass author_id for blacklist check)
+            if not self.author_filter.should_include(author, exclude_blacklisted, filter_authors, author_id=author_id):
                 continue
 
             # Standardized result format

@@ -29,26 +29,38 @@ class AuthorFilter:
         self,
         author: str,
         exclude_blacklisted: bool,
-        filter_authors: Optional[List[str]]
+        filter_authors: Optional[List[str]],
+        author_id: Optional[str] = None
     ) -> bool:
         """
         Determine if a document should be included based on author.
 
         Checks:
-        1. Blacklist filtering (if enabled)
-        2. Author whitelist filtering (if provided)
+        1. Blacklist filtering (if enabled) - uses author_id if provided
+        2. Author whitelist filtering (if provided) - uses author name
 
         Args:
-            author: Author name/ID from document metadata
+            author: Author name from document metadata
             exclude_blacklisted: Whether to filter out blacklisted authors
             filter_authors: Specific authors to include (None = include all)
+            author_id: Author ID (Discord user ID) for blacklist checking
 
         Returns:
             True if document should be INCLUDED, False if should be FILTERED OUT
         """
-        # Check blacklist
+        # Check blacklist - use author_id if available (more reliable)
         if exclude_blacklisted:
-            # Check both string and int representations
+            # Try author_id first (Discord user ID)
+            if author_id:
+                try:
+                    author_id_int = int(author_id)
+                    if author_id_int in self.config.BLACKLIST_IDS:
+                        self.logger.debug(f"Filtered out blacklisted author ID: {author_id} ({author})")
+                        return False
+                except (ValueError, TypeError):
+                    pass
+            
+            # Fallback: check author name/ID as string
             if author in self.config.BLACKLIST_IDS or \
                str(author) in [str(bid) for bid in self.config.BLACKLIST_IDS]:
                 self.logger.debug(f"Filtered out blacklisted author: {author}")

@@ -7,12 +7,13 @@ class RAGConfig:
     Configuration for RAG pipeline.
 
     Note on similarity_threshold:
-    - Vector/BM25 search: Use 0.3-0.5 (default: 0.35)
-    - Hybrid search (RRF): Use 0.005-0.015 (RRF scores are much smaller)
+    - Vector/BM25 search: Use 0.01-0.5 (default: 0.01 for better recall)
+    - Hybrid search (RRF): Use 0.005-0.015 (RRF scores are much smaller, default: 0.01 works well)
     - Reranking (cross-encoder): Use 0.5-2.0 (cross-encoder scores range from -10 to 10)
+    - Lower threshold = more results (better recall), Higher threshold = fewer but more relevant (better precision)
     """
     top_k: int = 10
-    similarity_threshold: float = 0.35
+    similarity_threshold: float = 0.01
     max_context_tokens: int = 4000
     temperature: float = 0.7
     strategy: str = "tokens"
