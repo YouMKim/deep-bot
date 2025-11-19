@@ -1115,6 +1115,14 @@ class Admin(commands.Cog):
             if rag_cog:
                 rag_cog.pipeline.ai_service = AIService(provider_name=provider.lower())
             
+            # Update Chatbot cog (CRITICAL - was missing!)
+            chatbot_cog = self.bot.get_cog("Chatbot")
+            if chatbot_cog:
+                chatbot_cog.ai_service = AIService(provider_name=provider.lower())
+                # Also update RAG pipeline in chatbot if it exists
+                if hasattr(chatbot_cog, 'rag_pipeline'):
+                    chatbot_cog.rag_pipeline.ai_service = AIService(provider_name=provider.lower())
+            
             embed = discord.Embed(
                 title="✅ Provider Switched",
                 description=f"Now using: **{provider}**",
@@ -1137,6 +1145,8 @@ class Admin(commands.Cog):
                 updated_cogs.append("Admin")
             if rag_cog:
                 updated_cogs.append("RAG")
+            if chatbot_cog:
+                updated_cogs.append("Chatbot")
             
             embed.add_field(
                 name="Updated Cogs",

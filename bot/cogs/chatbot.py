@@ -271,16 +271,19 @@ class Chatbot(commands.Cog):
                     pass  # Ignore reaction errors
                 
                 # Send response (split if exceeds Discord's 2000 char limit)
-                if response['content']:
+                if response.get('content'):
                     # Sanitize content to remove any corrupted characters
                     content = self._sanitize_response_content(response['content'])
+                    
                     if content:
                         await self._send_long_message(message.channel, content)
                     else:
+                        logger.error(f"Content became empty after sanitization for channel {message.channel.id}")
                         await message.channel.send(
                             "❌ Sorry, I couldn't generate a valid response. Please try again."
                         )
                 else:
+                    logger.error(f"Response has no content for channel {message.channel.id}")
                     await message.channel.send(
                         "❌ Sorry, I couldn't generate a response. Please try again."
                     )
@@ -672,11 +675,13 @@ class Chatbot(commands.Cog):
             
             # If response is long, try to summarize it for more conversational feel
             content = result['content']
+            if not content:
+                logger.warning(f"AI service returned empty content for channel {channel_id}")
+            
             if len(content) > 800:  # If response is longer than ~800 chars (≈200 tokens)
                 content = await self._summarize_if_needed(content, message, is_rag=False)
             
             result['content'] = content
-            
             return {
                 'content': result['content'],
                 'cost': result['cost'],
@@ -685,7 +690,7 @@ class Chatbot(commands.Cog):
                 'mode': 'chat'
             }
         except Exception as e:
-            logger.error(f"Chat response generation error: {e}", exc_info=True)
+            logger.error(f"[CHAT] Chat response generation error: {e}", exc_info=True)
             return {
                 'content': "Sorry, I encountered an error generating a response.",
                 'cost': 0.0,
