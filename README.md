@@ -57,6 +57,10 @@ pip install -r requirements.txt
 
 1. Copy the example environment file:
    ```bash
+   # Linux/Mac
+   cp env.example .env
+   
+   # Windows
    copy env.example .env
    ```
 
@@ -66,6 +70,8 @@ pip install -r requirements.txt
    DISCORD_CLIENT_ID=your_actual_client_id
    DISCORD_GUILD_ID=your_server_id
    OPENAI_API_KEY=your_actual_openai_key
+   ANTHROPIC_API_KEY=your_anthropic_key  # Optional: for Claude models
+   GEMINI_API_KEY=your_gemini_key  # Optional: for Gemini models
    BOT_OWNER_ID=your_discord_user_id
    ```
 
@@ -83,6 +89,8 @@ python bot.py
 |----------|----------|-------------|
 | `DISCORD_TOKEN` | ✅ | Your Discord bot token |
 | `OPENAI_API_KEY` | ✅ | Your OpenAI API key |
+| `ANTHROPIC_API_KEY` | ❌ | Your Anthropic API key (for Claude models) |
+| `GEMINI_API_KEY` | ❌ | Your Google Gemini API key (for Gemini models) |
 | `DISCORD_CLIENT_ID` | ❌ | Bot client ID for invite links |
 | `DISCORD_GUILD_ID` | ❌ | Specific server ID (optional) |
 | `BOT_OWNER_ID` | ❌ | Your Discord user ID |
@@ -105,6 +113,16 @@ python bot.py
 3. Go to API Keys section
 4. Create a new secret key
 5. Copy the key (keep it secret!)
+
+### Getting Gemini API Key
+
+1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Select or create a Google Cloud project
+5. Copy the API key (keep it secret!)
+
+**Note:** The bot uses `gemini-2.5-flash` as the default Gemini model, which supports hybrid reasoning and a 1M token context window.
 
 ## 🛡️ Security Best Practices
 

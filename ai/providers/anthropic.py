@@ -8,7 +8,6 @@ from ..models import AIRequest, AIResponse, TokenUsage, CostDetails
 
 
 class AnthropicProvider(BaseAIProvider):
-    # Anthropic pricing per 1M tokens (updated 2025 with Claude 4.5 models)
     # Source: https://www.anthropic.com/pricing
     PRICING_TABLE = {
         # Claude 4.5 Series (Latest - 2025)

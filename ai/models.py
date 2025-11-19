@@ -10,6 +10,7 @@ load_dotenv()
 class AIProvider(Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    GEMINI = "gemini"
 
 
 @dataclass
@@ -23,6 +24,7 @@ class AIConfig:
 
     open_api_key: str = os.getenv("OPENAI_API_KEY", "")
     anthopic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 
 
 @dataclass
@@ -45,6 +47,14 @@ class TokenUsage:
             prompt_tokens=input_tokens,
             completion_tokens=output_tokens,
             total_tokens=input_tokens + output_tokens
+        )
+    
+    @classmethod
+    def from_gemini(cls, prompt_tokens: int, completion_tokens: int) -> "TokenUsage":
+        return cls(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens
         )
 
 
