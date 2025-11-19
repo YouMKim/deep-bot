@@ -279,3 +279,37 @@ Guidelines:
         
         logger.info("Chatbot configuration validated successfully")
         return True
+    
+    @classmethod
+    def create_rag_config(cls, **overrides) -> 'RAGConfig':
+        """
+        Create RAGConfig with defaults from environment variables.
+        
+        This provides a single source of truth for RAG configuration creation,
+        eliminating duplication between chatbot.py and rag.py.
+        
+        Args:
+            **overrides: Any config values to override defaults
+            
+        Returns:
+            RAGConfig instance with defaults applied
+        """
+        from rag.models import RAGConfig
+        
+        config_dict = {
+            'top_k': cls.RAG_DEFAULT_TOP_K,
+            'similarity_threshold': cls.RAG_DEFAULT_SIMILARITY_THRESHOLD,
+            'max_context_tokens': cls.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
+            'temperature': cls.RAG_DEFAULT_TEMPERATURE,
+            'strategy': cls.RAG_DEFAULT_STRATEGY,
+            'use_hybrid_search': cls.RAG_USE_HYBRID_SEARCH,
+            'use_multi_query': cls.RAG_USE_MULTI_QUERY,
+            'use_hyde': cls.RAG_USE_HYDE,
+            'use_reranking': cls.RAG_USE_RERANKING,
+            'max_output_tokens': cls.RAG_MAX_OUTPUT_TOKENS,
+        }
+        
+        # Apply overrides
+        config_dict.update(overrides)
+        
+        return RAGConfig(**config_dict)

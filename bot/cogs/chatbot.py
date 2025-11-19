@@ -7,15 +7,15 @@ Provides natural conversation capabilities with RAG-enhanced question answering.
 import discord
 from discord.ext import commands, tasks
 import logging
-from typing import List, Optional, Tuple
-from datetime import datetime
+from typing import List, Optional, Tuple, Dict
+from datetime import datetime, timedelta
 
 from config import Config
 from ai.service import AIService
 from ai.tracker import UserAITracker
 from rag.pipeline import RAGPipeline
-from rag.models import RAGConfig
-from bot.utils.session_manager import SessionManager, RateLimiter
+from bot.utils.session_manager import SessionManager
+from bot.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,10 @@ class Chatbot(commands.Cog):
         self.ai_service = AIService(provider_name=self.config.AI_DEFAULT_PROVIDER)
         self.rag_pipeline = RAGPipeline(config=self.config)
         self.ai_tracker = UserAITracker()
+        
+        # Channel context cache: {channel_id: (context, timestamp)}
+        self._channel_context_cache: Dict[int, Tuple[str, datetime]] = {}
+        self._cache_ttl = 30  # seconds
         
         # Start background cleanup task
         self.cleanup_sessions.start()
@@ -103,6 +107,14 @@ class Chatbot(commands.Cog):
             )
             return
         
+        # Sanitize input
+        sanitized_content = self._sanitize_chat_input(message.content)
+        if not sanitized_content:
+            await message.channel.send(
+                f"❌ {message.author.mention} Message is empty after sanitization."
+            )
+            return
+        
         # Process message
         try:
             async with message.channel.typing():
@@ -112,14 +124,12 @@ class Chatbot(commands.Cog):
                 except discord.HTTPException:
                     pass  # Ignore reaction errors
                 
-                # Get or create session
-                session = await self.session_manager.get_session(
-                    message.author.id,
-                    message.channel.id
-                )
+                # Get or create channel session
+                channel_id = message.channel.id
+                session = await self.session_manager.get_session(channel_id)
                 
                 # Detect if message is a question
-                is_question = await self._is_question(message.content)
+                is_question = await self._is_question(sanitized_content)
                 
                 # Extract mentions for potential RAG filtering
                 mentioned_users = self._extract_mentions(message)
@@ -127,24 +137,42 @@ class Chatbot(commands.Cog):
                 # Determine if RAG is needed (only for questions that need history search)
                 needs_rag = False
                 if is_question and self.config.CHATBOT_USE_RAG:
-                    needs_rag = await self._needs_rag(message.content, mentioned_users)
+                    needs_rag = await self._needs_rag(sanitized_content, mentioned_users)
                 
                 # Generate response
                 if needs_rag:
                     # Use RAG for questions about past conversations/events
                     response = await self._generate_rag_response(
-                        message.content,
+                        sanitized_content,
                         message.author.id,
                         mentioned_users,
-                        message.channel.id
+                        channel_id
                     )
                 else:
                     # Use conversational chat for everything else
                     response = await self._generate_chat_response(
-                        message.content,
-                        message.author.id,
-                        message.channel.id
+                        sanitized_content,
+                        channel_id,
+                        message.author.display_name
                     )
+                
+                # Update session history BEFORE sending (for consistency)
+                await self.session_manager.add_message(
+                    channel_id,
+                    "user",
+                    sanitized_content,
+                    author_id=message.author.id,
+                    author_name=message.author.display_name
+                )
+                await self.session_manager.add_message(
+                    channel_id,
+                    "assistant",
+                    response['content']
+                )
+                
+                # Invalidate channel context cache since we just added a message
+                if channel_id in self._channel_context_cache:
+                    del self._channel_context_cache[channel_id]
                 
                 # Remove "eyes" reaction, add "check" reaction
                 try:
@@ -160,18 +188,6 @@ class Chatbot(commands.Cog):
                     await message.channel.send(
                         "❌ Sorry, I couldn't generate a response. Please try again."
                     )
-                
-                # Update session history
-                await self.session_manager.add_message(
-                    message.author.id,
-                    "user",
-                    message.content
-                )
-                await self.session_manager.add_message(
-                    message.author.id,
-                    "assistant",
-                    response['content']
-                )
                 
                 # Track usage
                 user_display_name = message.author.display_name
@@ -288,7 +304,8 @@ class Chatbot(commands.Cog):
         temporal_keywords = [
             'yesterday', 'last week', 'last month', 'earlier', 'before',
             'previously', 'recently', 'earlier today', 'last time',
-            'did we', 'did they', 'did you', 'was there', 'were there'
+            'did we', 'did they', 'did you', 'was there', 'were there',
+            'earlier?', 'earlier.', 'earlier!'
         ]
         if any(keyword in text_lower for keyword in temporal_keywords):
             return True
@@ -342,6 +359,32 @@ class Chatbot(commands.Cog):
         """
         return [user.display_name for user in message.mentions if not user.bot]
     
+    def _sanitize_chat_input(self, text: str) -> str:
+        """
+        Sanitize chat input by removing excessive whitespace and control characters.
+        
+        Args:
+            text: Raw input text
+            
+        Returns:
+            Sanitized text
+        """
+        if not text:
+            return ""
+        
+        # Remove control characters (except newlines and tabs)
+        import re
+        text = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+        
+        # Normalize whitespace (collapse multiple spaces, keep single newlines)
+        text = re.sub(r'[ \t]+', ' ', text)  # Multiple spaces/tabs to single space
+        text = re.sub(r'\n{3,}', '\n\n', text)  # Multiple newlines to double
+        
+        # Strip leading/trailing whitespace
+        text = text.strip()
+        
+        return text
+    
     async def _generate_rag_response(
         self,
         question: str,
@@ -362,18 +405,11 @@ class Chatbot(commands.Cog):
             dict with answer, sources, cost, etc.
         """
         try:
-            # Build RAG config
-            config = RAGConfig(
-                top_k=self.config.RAG_DEFAULT_TOP_K,
+            # Build RAG config using shared utility method
+            config = self.config.create_rag_config(
                 similarity_threshold=self.config.CHATBOT_RAG_THRESHOLD,
-                max_context_tokens=self.config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
                 temperature=self.config.CHATBOT_TEMPERATURE,
-                strategy=self.config.RAG_DEFAULT_STRATEGY,
                 filter_authors=mentioned_users if mentioned_users else None,
-                use_hybrid_search=self.config.RAG_USE_HYBRID_SEARCH,
-                use_multi_query=self.config.RAG_USE_MULTI_QUERY,
-                use_hyde=self.config.RAG_USE_HYDE,
-                use_reranking=self.config.RAG_USE_RERANKING,
                 max_output_tokens=self.config.CHATBOT_MAX_TOKENS,
             )
             
@@ -391,11 +427,16 @@ class Chatbot(commands.Cog):
         except Exception as e:
             logger.error(f"RAG response generation error: {e}", exc_info=True)
             # Fallback to chat mode on RAG error
-            return await self._generate_chat_response(question, user_id, channel_id)
+            return await self._generate_chat_response(
+                question,
+                channel_id,
+                "User"  # Default author name for fallback
+            )
     
     async def _get_recent_channel_context(self, channel_id: int, limit: int = 5) -> str:
         """
         Fetch recent messages from channel for additional context.
+        Uses caching to reduce Discord API calls.
         
         Args:
             channel_id: Discord channel ID
@@ -404,6 +445,14 @@ class Chatbot(commands.Cog):
         Returns:
             Formatted string of recent messages
         """
+        # Check cache first
+        now = datetime.now()
+        if channel_id in self._channel_context_cache:
+            context, cache_time = self._channel_context_cache[channel_id]
+            if (now - cache_time).total_seconds() < self._cache_ttl:
+                return context
+        
+        # Cache miss or expired - fetch from Discord
         try:
             channel = self.bot.get_channel(channel_id)
             if not channel:
@@ -417,7 +466,10 @@ class Chatbot(commands.Cog):
             messages.reverse()  # Chronological order
             
             if messages:
-                return "Recent channel context:\n" + "\n".join(messages) + "\n\n"
+                context = "Recent channel context:\n" + "\n".join(messages) + "\n\n"
+                # Update cache
+                self._channel_context_cache[channel_id] = (context, now)
+                return context
             return ""
         except Exception as e:
             logger.warning(f"Error fetching channel context: {e}")
@@ -426,33 +478,32 @@ class Chatbot(commands.Cog):
     async def _generate_chat_response(
         self,
         message: str,
-        user_id: int,
-        channel_id: Optional[int] = None
+        channel_id: int,
+        author_name: str
     ) -> dict:
         """
         Generate conversational response using chat history.
         
         Args:
             message: User's message
-            user_id: User ID for session tracking
-            channel_id: Optional channel ID for context
+            channel_id: Channel ID for session tracking
+            author_name: Display name of message author
             
         Returns:
             dict with content, cost, model, etc.
         """
         try:
             # Get channel context if available
-            channel_context = ""
-            if channel_id:
-                channel_context = await self._get_recent_channel_context(
-                    channel_id,
-                    self.config.CHATBOT_INCLUDE_CONTEXT_MESSAGES
-                )
+            channel_context = await self._get_recent_channel_context(
+                channel_id,
+                self.config.CHATBOT_INCLUDE_CONTEXT_MESSAGES
+            )
             
-            # Format prompt with history
+            # Format prompt with history (channel-level)
             prompt = await self.session_manager.format_for_ai(
-                user_id,
+                channel_id,
                 message,
+                author_name,
                 self.config.CHATBOT_SYSTEM_PROMPT,
                 channel_context
             )
@@ -481,21 +532,26 @@ class Chatbot(commands.Cog):
                 'mode': 'chat'
             }
     
-    @commands.command(name='chatbot_reset', help='Reset your conversation history')
+    @commands.command(name='chatbot_reset', help='Reset channel conversation history')
     async def reset_conversation(self, ctx):
-        """Allow users to reset their conversation history."""
-        user_id = ctx.author.id
-        await self.session_manager.reset_session(user_id)
-        await ctx.send(f"✅ {ctx.author.mention} Your conversation history has been cleared!")
+        """Reset the channel's conversation history."""
+        channel_id = ctx.channel.id
+        await self.session_manager.reset_session(channel_id)
+        
+        # Invalidate cache
+        if channel_id in self._channel_context_cache:
+            del self._channel_context_cache[channel_id]
+        
+        await ctx.send(f"✅ {ctx.author.mention} Channel conversation history has been cleared!")
     
-    @commands.command(name='chatbot_stats', help='View your chatbot usage statistics')
+    @commands.command(name='chatbot_stats', help='View channel chatbot usage statistics')
     async def chatbot_stats(self, ctx):
-        """Show user's chatbot usage statistics."""
-        user_id = ctx.author.id
-        session = await self.session_manager.get_session(user_id, ctx.channel.id)
+        """Show channel's chatbot usage statistics."""
+        channel_id = ctx.channel.id
+        session = await self.session_manager.get_session(channel_id)
         
         embed = discord.Embed(
-            title=f"📊 Chatbot Statistics for {ctx.author.display_name}",
+            title=f"📊 Chatbot Statistics for #{ctx.channel.name}",
             color=discord.Color.blue()
         )
         

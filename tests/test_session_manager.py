@@ -12,7 +12,8 @@ Tests cover:
 import pytest
 import asyncio
 from datetime import datetime, timedelta
-from bot.utils.session_manager import SessionManager, RateLimiter
+from bot.utils.session_manager import SessionManager
+from bot.utils.rate_limiter import RateLimiter
 
 
 class TestRateLimiter:
@@ -114,15 +115,13 @@ class TestSessionManager:
     
     @pytest.mark.asyncio
     async def test_create_session(self):
-        """Test creating a new session"""
+        """Test creating a new channel session"""
         manager = SessionManager(max_history=10, session_timeout=1800)
         
-        user_id = 12345
         channel_id = 67890
         
-        session = await manager.get_session(user_id, channel_id)
+        session = await manager.get_session(channel_id)
         
-        assert session['user_id'] == user_id
         assert session['channel_id'] == channel_id
         assert session['messages'] == []
         assert 'created_at' in session
@@ -130,43 +129,41 @@ class TestSessionManager:
     
     @pytest.mark.asyncio
     async def test_get_existing_session(self):
-        """Test getting an existing session"""
+        """Test getting an existing channel session"""
         manager = SessionManager(max_history=10, session_timeout=1800)
         
-        user_id = 12345
         channel_id = 67890
         
         # Create session
-        session1 = await manager.get_session(user_id, channel_id)
+        session1 = await manager.get_session(channel_id)
         
         # Get same session again
-        session2 = await manager.get_session(user_id, channel_id)
+        session2 = await manager.get_session(channel_id)
         
-        assert session1['user_id'] == session2['user_id']
         assert session1['channel_id'] == session2['channel_id']
     
     @pytest.mark.asyncio
     async def test_add_message(self):
-        """Test adding messages to session"""
+        """Test adding messages to channel session"""
         manager = SessionManager(max_history=10, session_timeout=1800)
         
-        user_id = 12345
         channel_id = 67890
         
         # Create session
-        await manager.get_session(user_id, channel_id)
+        await manager.get_session(channel_id)
         
-        # Add user message
-        await manager.add_message(user_id, "user", "Hello!")
+        # Add user message with author info
+        await manager.add_message(channel_id, "user", "Hello!", author_id=12345, author_name="TestUser")
         
         # Add assistant message
-        await manager.add_message(user_id, "assistant", "Hi there!")
+        await manager.add_message(channel_id, "assistant", "Hi there!")
         
-        history = await manager.get_history(user_id)
+        history = await manager.get_history(channel_id)
         
         assert len(history) == 2
         assert history[0]['role'] == "user"
         assert history[0]['content'] == "Hello!"
+        assert history[0]['author_name'] == "TestUser"
         assert history[1]['role'] == "assistant"
         assert history[1]['content'] == "Hi there!"
     
@@ -175,16 +172,15 @@ class TestSessionManager:
         """Test that history is trimmed to max_history"""
         manager = SessionManager(max_history=3, session_timeout=1800)
         
-        user_id = 12345
         channel_id = 67890
         
-        await manager.get_session(user_id, channel_id)
+        await manager.get_session(channel_id)
         
         # Add more messages than max_history
         for i in range(5):
-            await manager.add_message(user_id, "user", f"Message {i}")
+            await manager.add_message(channel_id, "user", f"Message {i}", author_id=12345, author_name="User")
         
-        history = await manager.get_history(user_id)
+        history = await manager.get_history(channel_id)
         
         # Should only keep last 3 messages
         assert len(history) == 3
@@ -193,36 +189,34 @@ class TestSessionManager:
     
     @pytest.mark.asyncio
     async def test_get_history_empty(self):
-        """Test getting history for user with no messages"""
+        """Test getting history for channel with no messages"""
         manager = SessionManager(max_history=10, session_timeout=1800)
         
-        user_id = 12345
         channel_id = 67890
         
-        await manager.get_session(user_id, channel_id)
+        await manager.get_session(channel_id)
         
-        history = await manager.get_history(user_id)
+        history = await manager.get_history(channel_id)
         
         assert history == []
     
     @pytest.mark.asyncio
     async def test_reset_session(self):
-        """Test resetting a session"""
+        """Test resetting a channel session"""
         manager = SessionManager(max_history=10, session_timeout=1800)
         
-        user_id = 12345
         channel_id = 67890
         
-        await manager.get_session(user_id, channel_id)
+        await manager.get_session(channel_id)
         
         # Add some messages
-        await manager.add_message(user_id, "user", "Hello!")
-        await manager.add_message(user_id, "assistant", "Hi!")
+        await manager.add_message(channel_id, "user", "Hello!", author_id=12345, author_name="User")
+        await manager.add_message(channel_id, "assistant", "Hi!")
         
         # Reset session
-        await manager.reset_session(user_id)
+        await manager.reset_session(channel_id)
         
-        history = await manager.get_history(user_id)
+        history = await manager.get_history(channel_id)
         
         assert len(history) == 0
     
@@ -231,23 +225,22 @@ class TestSessionManager:
         """Test formatting history for AI prompt"""
         manager = SessionManager(max_history=10, session_timeout=1800, max_context_tokens=1000)
         
-        user_id = 12345
         channel_id = 67890
         
-        await manager.get_session(user_id, channel_id)
+        await manager.get_session(channel_id)
         
         # Add some messages
-        await manager.add_message(user_id, "user", "Hello!")
-        await manager.add_message(user_id, "assistant", "Hi there!")
+        await manager.add_message(channel_id, "user", "Hello!", author_id=12345, author_name="Alice")
+        await manager.add_message(channel_id, "assistant", "Hi there!")
         
         system_prompt = "You are a helpful assistant."
-        prompt = await manager.format_for_ai(user_id, "How are you?", system_prompt)
+        prompt = await manager.format_for_ai(channel_id, "How are you?", "Bob", system_prompt)
         
         assert system_prompt in prompt
         assert "Hello!" in prompt
         assert "Hi there!" in prompt
         assert "How are you?" in prompt
-        assert "User:" in prompt
+        assert "User" in prompt or "Alice" in prompt
         assert "Assistant:" in prompt
     
     @pytest.mark.asyncio
@@ -255,50 +248,47 @@ class TestSessionManager:
         """Test formatting with channel context"""
         manager = SessionManager(max_history=10, session_timeout=1800, max_context_tokens=1000)
         
-        user_id = 12345
         channel_id = 67890
         
-        await manager.get_session(user_id, channel_id)
+        await manager.get_session(channel_id)
         
         system_prompt = "You are a helpful assistant."
         channel_context = "Recent channel context:\nUser1: Hello\nUser2: World\n\n"
         
-        prompt = await manager.format_for_ai(user_id, "Test", system_prompt, channel_context)
+        prompt = await manager.format_for_ai(channel_id, "Test", "User", system_prompt, channel_context)
         
         assert channel_context in prompt
     
     @pytest.mark.asyncio
     async def test_trim_history_by_tokens(self):
-        """Test token-based history trimming"""
+        """Test token-based history trimming with accurate counting"""
         manager = SessionManager(max_history=100, session_timeout=1800, max_context_tokens=100)
         
-        user_id = 12345
         channel_id = 67890
         
-        await manager.get_session(user_id, channel_id)
+        await manager.get_session(channel_id)
         
         # Add messages with varying lengths
         for i in range(10):
             content = "X" * (i * 10)  # Increasing length
-            await manager.add_message(user_id, "user", content)
+            await manager.add_message(channel_id, "user", content, author_id=12345, author_name="User")
         
         # Format should trim to fit token budget
-        prompt = await manager.format_for_ai(user_id, "Test", "System prompt")
+        prompt = await manager.format_for_ai(channel_id, "Test", "User", "System prompt")
         
         # Should not include all messages due to token limit
         assert len(prompt) > 0
     
     @pytest.mark.asyncio
     async def test_cleanup_expired_sessions(self):
-        """Test cleaning up expired sessions"""
+        """Test cleaning up expired channel sessions"""
         manager = SessionManager(max_history=10, session_timeout=1)  # 1 second timeout
         
-        user_id = 12345
         channel_id = 67890
         
         # Create session
-        await manager.get_session(user_id, channel_id)
-        await manager.add_message(user_id, "user", "Hello!")
+        await manager.get_session(channel_id)
+        await manager.add_message(channel_id, "user", "Hello!", author_id=12345, author_name="User")
         
         # Wait for session to expire
         await asyncio.sleep(1.5)
@@ -307,51 +297,49 @@ class TestSessionManager:
         await manager.cleanup_expired_sessions()
         
         # Session should be gone
-        history = await manager.get_history(user_id)
+        history = await manager.get_history(channel_id)
         assert len(history) == 0
     
     @pytest.mark.asyncio
     async def test_cleanup_keeps_active_sessions(self):
-        """Test that active sessions are not cleaned up"""
+        """Test that active channel sessions are not cleaned up"""
         manager = SessionManager(max_history=10, session_timeout=10)  # 10 second timeout
         
-        user_id = 12345
         channel_id = 67890
         
         # Create session
-        await manager.get_session(user_id, channel_id)
-        await manager.add_message(user_id, "user", "Hello!")
+        await manager.get_session(channel_id)
+        await manager.add_message(channel_id, "user", "Hello!", author_id=12345, author_name="User")
         
         # Update activity
-        await manager.get_session(user_id, channel_id)
+        await manager.get_session(channel_id)
         
         # Cleanup should not remove active session
         await manager.cleanup_expired_sessions()
         
         # Session should still exist
-        history = await manager.get_history(user_id)
+        history = await manager.get_history(channel_id)
         assert len(history) == 1
     
     @pytest.mark.asyncio
     async def test_concurrent_access(self):
-        """Test that concurrent access is handled safely"""
+        """Test that concurrent access to channel session is handled safely"""
         manager = SessionManager(max_history=20, session_timeout=1800)  # Increase to allow all messages
         
-        user_id = 12345
         channel_id = 67890
         
         # Create session first
-        await manager.get_session(user_id, channel_id)
+        await manager.get_session(channel_id)
         
         async def add_messages():
             for i in range(5):
-                await manager.add_message(user_id, "user", f"Message {i}")
+                await manager.add_message(channel_id, "user", f"Message {i}", author_id=12345, author_name="User")
                 await asyncio.sleep(0.01)
         
         # Run multiple coroutines concurrently
         await asyncio.gather(*[add_messages() for _ in range(3)])
         
-        history = await manager.get_history(user_id)
+        history = await manager.get_history(channel_id)
         
         # Should have all messages (15 total: 3 coroutines * 5 messages)
         # Note: Due to concurrency, exact count may vary, but should be close to 15
@@ -360,16 +348,16 @@ class TestSessionManager:
     
     @pytest.mark.asyncio
     async def test_add_message_to_nonexistent_session(self):
-        """Test adding message to non-existent session"""
+        """Test adding message to non-existent channel session"""
         manager = SessionManager(max_history=10, session_timeout=1800)
         
-        user_id = 12345
+        channel_id = 67890
         
         # Try to add message without creating session first
-        await manager.add_message(user_id, "user", "Hello!")
+        await manager.add_message(channel_id, "user", "Hello!", author_id=12345, author_name="User")
         
         # Should not raise error, but message won't be added
-        history = await manager.get_history(user_id)
+        history = await manager.get_history(channel_id)
         assert len(history) == 0
 
 

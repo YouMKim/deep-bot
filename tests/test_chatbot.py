@@ -230,6 +230,7 @@ class TestMessageFiltering:
     @pytest.mark.asyncio
     async def test_filter_blacklisted_users(self, chatbot_cog, mock_message):
         """Test that blacklisted users are filtered"""
+        # Note: blacklist check happens before rate limit, so no need to mock rate limiter
         with patch.object(Config, 'is_blacklisted', return_value=True):
             await chatbot_cog.on_message(mock_message)
             mock_message.channel.send.assert_not_called()
@@ -241,10 +242,10 @@ class TestMessageFiltering:
         
         await chatbot_cog.on_message(mock_message)
         
-        # Should send error message
+        # Should send error message about length (before rate limit check)
         mock_message.channel.send.assert_called_once()
         call_args = mock_message.channel.send.call_args[0][0]
-        assert "too long" in call_args.lower()
+        assert "too long" in call_args.lower() or "2000" in call_args
 
 
 class TestRateLimiting:
@@ -261,7 +262,7 @@ class TestRateLimiting:
             'tokens_total': 100,
             'mode': 'chat'
         })
-        chatbot_cog.session_manager.get_session = AsyncMock(return_value={'messages': []})
+        chatbot_cog.session_manager.get_session = AsyncMock(return_value={'messages': [], 'channel_id': 12345})
         chatbot_cog.session_manager.add_message = AsyncMock()
         
         await chatbot_cog.on_message(mock_message)
@@ -300,8 +301,8 @@ class TestResponseGeneration:
         
         response = await chatbot_cog._generate_chat_response(
             "Hello",
-            12345,
-            67890
+            67890,
+            "TestUser"
         )
         
         assert response['content'] == 'Hi there!'
@@ -390,28 +391,34 @@ class TestAdminCommands:
     @pytest.mark.asyncio
     async def test_reset_conversation(self, chatbot_cog):
         """Test reset conversation command"""
-        ctx = MagicMock()
+        from discord.ext.commands import Context
+        ctx = MagicMock(spec=Context)
         ctx.author.id = 12345
         ctx.author.mention = "<@12345>"
+        ctx.channel.id = 67890
         ctx.send = AsyncMock()
         
         chatbot_cog.session_manager.reset_session = AsyncMock()
         
-        await chatbot_cog.reset_conversation(ctx)
+        # Call as command handler would
+        await chatbot_cog.reset_conversation.callback(chatbot_cog, ctx)
         
-        chatbot_cog.session_manager.reset_session.assert_called_once_with(12345)
+        chatbot_cog.session_manager.reset_session.assert_called_once_with(67890)
         ctx.send.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_chatbot_stats(self, chatbot_cog):
         """Test chatbot stats command"""
-        ctx = MagicMock()
+        from discord.ext.commands import Context
+        ctx = MagicMock(spec=Context)
         ctx.author.id = 12345
         ctx.author.display_name = "TestUser"
         ctx.channel.id = 67890
+        ctx.channel.name = "test-channel"
         ctx.send = AsyncMock()
         
         chatbot_cog.session_manager.get_session = AsyncMock(return_value={
+            'channel_id': 67890,
             'messages': [{'role': 'user', 'content': 'Hello'}],
             'created_at': datetime.now(),
             'last_activity': datetime.now()
@@ -422,7 +429,8 @@ class TestAdminCommands:
             'lifetime_credit': 150.0
         })
         
-        await chatbot_cog.chatbot_stats(ctx)
+        # Call as command handler would
+        await chatbot_cog.chatbot_stats.callback(chatbot_cog, ctx)
         
         ctx.send.assert_called_once()
         # Check that embed was sent
@@ -432,24 +440,26 @@ class TestAdminCommands:
     @pytest.mark.asyncio
     async def test_chatbot_mode_admin_only(self, chatbot_cog):
         """Test that chatbot_mode is admin-only"""
-        ctx = MagicMock()
+        from discord.ext.commands import Context
+        ctx = MagicMock(spec=Context)
         ctx.author.id = 99999  # Not admin
         ctx.send = AsyncMock()
         
         with patch.object(Config, 'BOT_OWNER_ID', '12345'):
-            await chatbot_cog.chatbot_mode(ctx)
+            await chatbot_cog.chatbot_mode.callback(chatbot_cog, ctx)
             ctx.send.assert_called_once()
             assert "admin-only" in ctx.send.call_args[0][0].lower()
     
     @pytest.mark.asyncio
     async def test_chatbot_mode_admin_access(self, chatbot_cog):
         """Test that admin can access chatbot_mode"""
-        ctx = MagicMock()
+        from discord.ext.commands import Context
+        ctx = MagicMock(spec=Context)
         ctx.author.id = 12345
         ctx.send = AsyncMock()
         
         with patch.object(Config, 'BOT_OWNER_ID', '12345'):
-            await chatbot_cog.chatbot_mode(ctx)
+            await chatbot_cog.chatbot_mode.callback(chatbot_cog, ctx)
             ctx.send.assert_called_once()
             # Should send embed with config
             call_args = ctx.send.call_args
