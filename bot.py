@@ -39,6 +39,7 @@ class DeepBot(commands.Bot):
             intents=Config.get_discord_intents(),
             owner_id=owner_id,
             strip_after_prefix=True,
+            help_command=None,  # Disable default help command, we'll use custom one
         )
         self.debug_mode = Config.DEBUG_MODE
 

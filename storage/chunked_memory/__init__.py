@@ -137,7 +137,7 @@ class ChunkedMemoryService:
         return self.author_filter.should_include(author, exclude_blacklisted, filter_authors, author_id=author_id)
 
     # Delegate search methods
-    def search(
+    async def search(
         self,
         query: str,
         strategy: Optional[ChunkStrategy] = None,
@@ -146,7 +146,7 @@ class ChunkedMemoryService:
         filter_authors: Optional[List[str]] = None,
     ) -> List[Dict]:
         """Search for relevant chunks using vector similarity (backward compatibility)."""
-        return self.retrieval_service.search(
+        return await self.retrieval_service.search(
             query=query,
             strategy=strategy,
             active_strategy=self.active_strategy,
@@ -173,7 +173,7 @@ class ChunkedMemoryService:
             filter_authors=filter_authors
         )
 
-    def search_hybrid(
+    async def search_hybrid(
         self,
         query: str,
         strategy: Optional[ChunkStrategy] = None,
@@ -184,7 +184,7 @@ class ChunkedMemoryService:
         filter_authors: Optional[List[str]] = None,
     ) -> List[Dict]:
         """Hybrid search combining BM25 and vector similarity (backward compatibility)."""
-        return self.retrieval_service.search_hybrid(
+        return await self.retrieval_service.search_hybrid(
             query=query,
             strategy=strategy,
             active_strategy=self.active_strategy,

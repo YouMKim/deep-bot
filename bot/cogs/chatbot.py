@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 import logging
 from typing import List, Optional, Tuple, Dict
 from datetime import datetime, timedelta
+from collections import OrderedDict
 
 from config import Config
 from ai.service import AIService
@@ -43,15 +44,103 @@ class Chatbot(commands.Cog):
         self.rag_pipeline = RAGPipeline(config=self.config)
         self.ai_tracker = UserAITracker()
         
-        # Channel context cache: {channel_id: (context, timestamp)}
-        self._channel_context_cache: Dict[int, Tuple[str, datetime]] = {}
+        # Channel context cache: {channel_id: (context, timestamp)} with LRU eviction
+        self._channel_context_cache: OrderedDict[int, Tuple[str, datetime]] = OrderedDict()
         self._cache_ttl = 30  # seconds
+        self._max_cache_size = 100  # Maximum number of channels to cache
         
         # Start background cleanup task
         self.cleanup_sessions.start()
         self.cleanup_rate_limits.start()
         
         logger.info("Chatbot cog initialized")
+    
+    async def _send_long_message(self, channel, content: str):
+        """
+        Send a message, splitting it into multiple messages if it exceeds Discord's 2000 char limit.
+        
+        Args:
+            channel: Discord channel to send to
+            content: Message content to send
+        """
+        DISCORD_MAX_LENGTH = 2000
+        
+        if len(content) <= DISCORD_MAX_LENGTH:
+            # Message fits in one send
+            await channel.send(content)
+            return
+        
+        # Split into chunks, trying to break at sentence boundaries
+        # Reserve space for prefix (e.g., "*(Part 2/3)*\n\n" ≈ 20 chars)
+        # Use 1980 as max chunk size to leave room for prefix
+        MAX_CHUNK_SIZE = 1980
+        chunks = []
+        current_chunk = ""
+        
+        # Split by sentences first (period, exclamation, question mark followed by space or newline)
+        import re
+        # Split on sentence endings, keeping punctuation
+        sentences = re.split(r'([.!?][\s\n]+)', content)
+        
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i] if i < len(sentences) else ""
+            punctuation = sentences[i + 1] if i + 1 < len(sentences) else ""
+            full_sentence = sentence + punctuation
+            
+            # Skip empty sentences
+            if not full_sentence.strip():
+                continue
+            
+            # If adding this sentence would exceed limit, save current chunk and start new one
+            if len(current_chunk) + len(full_sentence) > MAX_CHUNK_SIZE:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                    current_chunk = full_sentence
+                else:
+                    # Single sentence is too long, force split by character
+                    # But try to avoid splitting in the middle of Unicode characters
+                    if len(full_sentence) > MAX_CHUNK_SIZE:
+                        # Split long sentence into character chunks, ensuring we don't break Unicode
+                        remaining = full_sentence
+                        while len(remaining) > MAX_CHUNK_SIZE:
+                            # Try to find a safe break point (space or newline) near the limit
+                            safe_break = MAX_CHUNK_SIZE
+                            # Look backwards for a space or newline within last 100 chars
+                            for j in range(MAX_CHUNK_SIZE, max(0, MAX_CHUNK_SIZE - 100), -1):
+                                if j < len(remaining) and remaining[j] in [' ', '\n']:
+                                    safe_break = j + 1
+                                    break
+                            
+                            chunk = remaining[:safe_break]
+                            if chunk.strip():  # Only add non-empty chunks
+                                chunks.append(chunk.strip())
+                            remaining = remaining[safe_break:]
+                        
+                        if remaining.strip():
+                            current_chunk = remaining
+                    else:
+                        current_chunk = full_sentence
+            else:
+                current_chunk += full_sentence
+        
+        # Add remaining chunk
+        if current_chunk and current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        # Send all chunks
+        for i, chunk in enumerate(chunks):
+            if chunk and chunk.strip():  # Only send non-empty chunks
+                # Add continuation indicator for multi-part messages
+                if len(chunks) > 1:
+                    prefix = f"*(Part {i + 1}/{len(chunks)})*\n\n"
+                    # Ensure prefix + chunk doesn't exceed limit
+                    if len(prefix) + len(chunk) > DISCORD_MAX_LENGTH:
+                        # If prefix pushes us over, reduce chunk size
+                        max_chunk_with_prefix = DISCORD_MAX_LENGTH - len(prefix)
+                        chunk = chunk[:max_chunk_with_prefix]
+                    await channel.send(prefix + chunk)
+                else:
+                    await channel.send(chunk)
     
     def cog_unload(self):
         """Clean up when cog is unloaded."""
@@ -181,9 +270,16 @@ class Chatbot(commands.Cog):
                 except discord.HTTPException:
                     pass  # Ignore reaction errors
                 
-                # Send response
+                # Send response (split if exceeds Discord's 2000 char limit)
                 if response['content']:
-                    await message.channel.send(response['content'])
+                    # Sanitize content to remove any corrupted characters
+                    content = self._sanitize_response_content(response['content'])
+                    if content:
+                        await self._send_long_message(message.channel, content)
+                    else:
+                        await message.channel.send(
+                            "❌ Sorry, I couldn't generate a valid response. Please try again."
+                        )
                 else:
                     await message.channel.send(
                         "❌ Sorry, I couldn't generate a response. Please try again."
@@ -283,6 +379,14 @@ class Chatbot(commands.Cog):
         if mentioned_users:
             return True
         
+        # Temporal references suggest asking about past events
+        temporal_keywords = [
+            'yesterday', 'last week', 'last month', 'earlier', 'before',
+            'previously', 'recently', 'earlier today', 'last time',
+            'did we', 'did they', 'did you', 'was there', 'were there',
+            'earlier?', 'earlier.', 'earlier!'
+        ]
+        
         # Conversational patterns that DON'T need RAG
         conversational_patterns = [
             'how are you', 'how\'s it going', 'what\'s up', 'whats up',
@@ -297,16 +401,11 @@ class Chatbot(commands.Cog):
         for pattern in conversational_patterns:
             if pattern in text_lower:
                 # But allow if it has additional context suggesting RAG
-                if not any(keyword in text_lower for keyword in ['say', 'said', 'mention', 'discuss', 'decide', 'plan']):
+                # Check for history keywords or temporal references
+                history_context = any(keyword in text_lower for keyword in ['say', 'said', 'mention', 'discuss', 'decide', 'plan', 'talk'])
+                temporal_context = any(keyword in text_lower for keyword in temporal_keywords)
+                if not (history_context or temporal_context):
                     return False
-        
-        # Temporal references suggest asking about past events
-        temporal_keywords = [
-            'yesterday', 'last week', 'last month', 'earlier', 'before',
-            'previously', 'recently', 'earlier today', 'last time',
-            'did we', 'did they', 'did you', 'was there', 'were there',
-            'earlier?', 'earlier.', 'earlier!'
-        ]
         if any(keyword in text_lower for keyword in temporal_keywords):
             return True
         
@@ -358,6 +457,36 @@ class Chatbot(commands.Cog):
         Returns list of display names for mentioned users.
         """
         return [user.display_name for user in message.mentions if not user.bot]
+    
+    def _sanitize_response_content(self, content: str) -> str:
+        """
+        Sanitize AI-generated response content to remove corrupted characters.
+        
+        Args:
+            content: Raw content from AI response
+            
+        Returns:
+            Sanitized content string
+        """
+        if not content:
+            return ""
+        
+        # Remove any null bytes and other control characters (except newlines and tabs)
+        import re
+        # Remove null bytes and other problematic control chars
+        content = content.replace('\x00', '')
+        # Remove other control characters except newline, tab, carriage return
+        content = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', content)
+        
+        # Check if content looks corrupted (too many non-printable or weird characters)
+        # If more than 10% of characters are non-ASCII and non-printable, it might be corrupted
+        non_printable_count = sum(1 for c in content if ord(c) > 127 and not c.isprintable() and c not in '\n\t')
+        if len(content) > 0 and non_printable_count / len(content) > 0.1:
+            logger.warning(f"Detected potentially corrupted content: {non_printable_count}/{len(content)} non-printable chars")
+            # Try to recover by keeping only printable ASCII + common Unicode
+            content = ''.join(c for c in content if c.isprintable() or c in '\n\t')
+        
+        return content.strip()
     
     def _sanitize_chat_input(self, text: str) -> str:
         """
@@ -426,12 +555,19 @@ class Chatbot(commands.Cog):
             }
         except Exception as e:
             logger.error(f"RAG response generation error: {e}", exc_info=True)
-            # Fallback to chat mode on RAG error
-            return await self._generate_chat_response(
+            # Fallback to chat mode on RAG error with user notification
+            fallback_response = await self._generate_chat_response(
                 question,
                 channel_id,
                 "User"  # Default author name for fallback
             )
+            # Prepend warning to inform user
+            fallback_response['content'] = (
+                "⚠️ *Note: Unable to search conversation history. "
+                "Responding without historical context.*\n\n" +
+                fallback_response['content']
+            )
+            return fallback_response
     
     async def _get_recent_channel_context(self, channel_id: int, limit: int = 5) -> str:
         """
@@ -450,6 +586,8 @@ class Chatbot(commands.Cog):
         if channel_id in self._channel_context_cache:
             context, cache_time = self._channel_context_cache[channel_id]
             if (now - cache_time).total_seconds() < self._cache_ttl:
+                # Move to end (most recently used) for LRU
+                self._channel_context_cache.move_to_end(channel_id)
                 return context
         
         # Cache miss or expired - fetch from Discord
@@ -467,8 +605,17 @@ class Chatbot(commands.Cog):
             
             if messages:
                 context = "Recent channel context:\n" + "\n".join(messages) + "\n\n"
-                # Update cache
-                self._channel_context_cache[channel_id] = (context, now)
+                # Update cache with LRU eviction
+                if channel_id in self._channel_context_cache:
+                    # Update existing entry and move to end
+                    self._channel_context_cache[channel_id] = (context, now)
+                    self._channel_context_cache.move_to_end(channel_id)
+                else:
+                    # Add new entry
+                    self._channel_context_cache[channel_id] = (context, now)
+                    # Evict oldest if over limit
+                    if len(self._channel_context_cache) > self._max_cache_size:
+                        self._channel_context_cache.popitem(last=False)
                 return context
             return ""
         except Exception as e:
@@ -582,26 +729,23 @@ class Chatbot(commands.Cog):
         embed.add_field(name="Session Started", value=str(created_at), inline=True)
         embed.add_field(name="Last Activity", value=str(last_activity), inline=True)
         
-        # Get user's total AI usage from tracker
+        # Get user's chatbot usage stats (for the user who called the command)
         stats = self.ai_tracker.get_user_stats(ctx.author.display_name)
         
         if stats:
             embed.add_field(
-                name="Total Cost",
+                name=f"Your Total Cost (from {ctx.author.display_name})",
                 value=f"${stats['lifetime_cost']:.4f}",
                 inline=True
             )
             embed.add_field(
-                name="Total Tokens",
+                name=f"Your Total Tokens (from {ctx.author.display_name})",
                 value=f"{stats['lifetime_tokens']:,}",
                 inline=True
             )
-            embed.add_field(
-                name="Social Credit",
-                value=f"{stats['lifetime_credit']:.2f}",
-                inline=True
-            )
+            # Note: Social credit removed - use !mystats for personal stats including social credit
         
+        embed.set_footer(text="Use !mystats for your complete personal stats including social credit")
         await ctx.send(embed=embed)
     
     @commands.command(name='chatbot_mode', help='Check current chatbot settings (Admin only)')

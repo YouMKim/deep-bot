@@ -741,12 +741,9 @@ class Admin(commands.Cog):
             await ctx.send(f"❌ Error: {e}")
     
     @commands.command(name='rag_settings', help='Show current RAG technique settings (Admin only)')
+    @commands.is_owner()
     async def rag_settings(self, ctx):
         """Show current RAG technique settings."""
-        # Manual owner check
-        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
-            await ctx.send("🚫 **Access Denied!** Only the bot admin can view RAG settings.")
-            return
         
         embed = discord.Embed(
             title="⚙️ RAG Technique Settings",
@@ -843,12 +840,9 @@ class Admin(commands.Cog):
             await ctx.send(f"❌ Error updating setting: {e}")
     
     @commands.command(name='rag_reset', help='Reset all RAG settings to defaults (Admin only)')
+    @commands.is_owner()
     async def rag_reset(self, ctx):
         """Reset all RAG settings to defaults."""
-        # Manual owner check
-        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
-            await ctx.send("🚫 **Access Denied!** Only the bot admin can reset RAG settings.")
-            return
         
         try:
             self.config.reset_rag_settings()
@@ -931,10 +925,6 @@ class Admin(commands.Cog):
         5. Reranking ON only
         6. All techniques ON
         """
-        # Manual owner check
-        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
-            await ctx.send("🚫 **Access Denied!** Only the bot admin can compare RAG techniques.")
-            return
         
         if not question:
             await ctx.send("❌ Please provide a question to compare.")

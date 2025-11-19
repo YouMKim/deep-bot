@@ -301,7 +301,7 @@ class TestMultiQueryRetrieval:
     async def test_multi_query_retrieval(self, sample_chunks):
         """Should retrieve with multiple query variations"""
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=sample_chunks)
+        mock_memory.search = AsyncMock(return_value=sample_chunks)
         
         mock_ai = MagicMock()
         mock_ai.generate = AsyncMock(return_value={
@@ -334,7 +334,7 @@ class TestMultiQueryRetrieval:
     async def test_multi_query_with_hybrid_search(self, sample_chunks):
         """Should use hybrid search when enabled with multi-query"""
         mock_memory = MagicMock()
-        mock_memory.search_hybrid = MagicMock(return_value=sample_chunks)
+        mock_memory.search_hybrid = AsyncMock(return_value=sample_chunks)
         
         mock_ai = MagicMock()
         mock_ai.generate = AsyncMock(return_value={
@@ -369,7 +369,7 @@ class TestRerankingInPipeline:
     async def test_pipeline_with_reranking(self, sample_chunks):
         """Should re-rank results when enabled"""
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=sample_chunks * 2)  # More chunks for reranking
+        mock_memory.search = AsyncMock(return_value=sample_chunks * 2)  # More chunks for reranking
         
         mock_ai = MagicMock()
         mock_ai.generate = AsyncMock(return_value={
@@ -409,7 +409,7 @@ class TestRerankingInPipeline:
     async def test_pipeline_reranking_fetches_more(self, sample_chunks):
         """Should fetch more candidates when reranking is enabled"""
         mock_memory = MagicMock()
-        mock_memory.search = MagicMock(return_value=sample_chunks)
+        mock_memory.search = AsyncMock(return_value=sample_chunks)
         
         mock_cross_encoder = MagicMock()
         mock_cross_encoder.predict = MagicMock(return_value=[0.9, 0.8, 0.7])
@@ -436,7 +436,7 @@ class TestHybridSearchInPipeline:
     async def test_pipeline_with_hybrid_search(self, sample_chunks):
         """Should use hybrid search when enabled"""
         mock_memory = MagicMock()
-        mock_memory.search_hybrid = MagicMock(return_value=sample_chunks)
+        mock_memory.search_hybrid = AsyncMock(return_value=sample_chunks)
         
         pipeline = RAGPipeline(chunked_memory_service=mock_memory)
         
@@ -518,7 +518,7 @@ class TestFullPipelineWithAdvancedFeatures:
     async def test_full_pipeline_hybrid_reranking(self, sample_chunks):
         """Should work with hybrid search + reranking"""
         mock_memory = MagicMock()
-        mock_memory.search_hybrid = MagicMock(return_value=sample_chunks * 3)
+        mock_memory.search_hybrid = AsyncMock(return_value=sample_chunks * 3)
         
         mock_ai = MagicMock()
         mock_ai.generate = AsyncMock(return_value={

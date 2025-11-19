@@ -161,7 +161,7 @@ class RAGPipeline:
 
         # Use hybrid search if enabled
         if config.use_hybrid_search:
-            chunks = self.chunked_memory.search_hybrid(
+            chunks = await self.chunked_memory.search_hybrid(
                 query=search_query,  # Use HyDE-enhanced query if enabled
                 strategy=strategy,
                 top_k=fetch_k,  # Fetch more if reranking
@@ -171,7 +171,7 @@ class RAGPipeline:
             )
         else:
             # Standard vector search
-            chunks = self.chunked_memory.search(
+            chunks = await self.chunked_memory.search(
                 query=search_query,  # Use HyDE-enhanced query if enabled
                 strategy=strategy,
                 top_k=fetch_k,  # Fetch more if reranking
@@ -324,20 +324,22 @@ class RAGPipeline:
         - At the very end clearly state that you are pulling outside information and do a 1-2 setntence evaluation of the discord chat.
         """
 
-        user_message = f"""Context from Discord conversations:
-
-        {context}
-
-        ---
-
-        Question: {question}
-
-        Answer (write naturally as a Discord message, no bullet points):"""
-
-        # Combine into single prompt (simple format for AIService)
-        full_prompt = f"{system_message}\n\n{user_message}"
+        # Use list join instead of f-string concatenation for better memory efficiency
+        parts = [
+            system_message.strip(),
+            "",
+            "Context from Discord conversations:",
+            "",
+            context,
+            "",
+            "---",
+            "",
+            f"Question: {question}",
+            "",
+            "Answer (write naturally as a Discord message, no bullet points):"
+        ]
         
-        return full_prompt
+        return "\n".join(parts)
 
     async def _retrieve_multi_query(
         self,
@@ -366,14 +368,14 @@ class RAGPipeline:
         all_results = []
         for q in queries:
             if config.use_hybrid_search:
-                results = self.chunked_memory.search_hybrid(
+                results = await self.chunked_memory.search_hybrid(
                     query=q,
                     strategy=strategy,
                     top_k=config.top_k * 2,  # Get more candidates
                     filter_authors=config.filter_authors
                 )
             else:
-                results = self.chunked_memory.search(
+                results = await self.chunked_memory.search(
                     query=q,
                     strategy=strategy,
                     top_k=config.top_k * 2,

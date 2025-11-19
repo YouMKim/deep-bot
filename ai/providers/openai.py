@@ -1,8 +1,11 @@
 import time
+import logging
 from openai import AsyncOpenAI
 from typing import Optional
 from ..base import BaseAIProvider
 from ..models import AIRequest, AIResponse, TokenUsage, CostDetails
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIProvider(BaseAIProvider):
@@ -34,10 +37,12 @@ class OpenAIProvider(BaseAIProvider):
     }
     
     def __init__(self, api_key: str, default_model: str = "gpt-4o-mini"):
+        if not api_key:
+            raise ValueError("OpenAIProvider requires a valid API key")
         self.client = AsyncOpenAI(api_key=api_key)
         self.default_model = default_model
     
-    async def complete(self, request: AIRequest) -> AIResponse:
+    async def complete(self, request: AIRequest, max_retries: int = 3) -> AIResponse:
 
         start_time = time.time()
         self.validate_request(request)
@@ -57,10 +62,42 @@ class OpenAIProvider(BaseAIProvider):
         if request.temperature is not None:
             params["temperature"] = request.temperature
         
-        try:
-            response = await self.client.chat.completions.create(**params)
-        except Exception as e:
-            raise Exception(f"OpenAI API error: {e}")
+        # Retry logic with exponential backoff
+        import asyncio
+        from openai import RateLimitError, APIError
+        
+        for attempt in range(max_retries):
+            try:
+                response = await self.client.chat.completions.create(**params)
+                break  # Success, exit retry loop
+            except RateLimitError as e:
+                if attempt == max_retries - 1:
+                    # Last attempt failed, raise the error
+                    logger.error(f"OpenAI rate limit exceeded after {max_retries} attempts")
+                    raise
+                
+                # Calculate wait time: 1s, 2s, 4s (exponential backoff)
+                wait_time = 2 ** attempt
+                logger.warning(
+                    f"OpenAI rate limit exceeded (attempt {attempt + 1}/{max_retries}), "
+                    f"retrying in {wait_time}s..."
+                )
+                await asyncio.sleep(wait_time)
+            except APIError as e:
+                # For other API errors (like 429 from other sources), also retry
+                if e.status_code == 429 and attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(
+                        f"OpenAI API error 429 (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {wait_time}s..."
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    # Non-retryable error or last attempt
+                    raise Exception(f"OpenAI API error: {e}")
+            except Exception as e:
+                # Other exceptions - don't retry
+                raise Exception(f"OpenAI API error: {e}")
         
         latency_ms = (time.time() - start_time) * 1000
         
@@ -90,8 +127,9 @@ class OpenAIProvider(BaseAIProvider):
         else:
             rates = self.PRICING_TABLE[model]
         
-        input_cost = (usage.prompt_tokens / 1000) * rates["prompt"]
-        output_cost = (usage.completion_tokens / 1000) * rates["completion"]
+        # Pricing table rates are per 1M tokens, so divide by 1,000,000
+        input_cost = (usage.prompt_tokens / 1_000_000) * rates["prompt"]
+        output_cost = (usage.completion_tokens / 1_000_000) * rates["completion"]
         
         return CostDetails(
             provider="openai",
