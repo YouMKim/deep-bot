@@ -54,14 +54,18 @@ class OpenAIProvider(BaseAIProvider):
         }
         
         # GPT-5 models use max_completion_tokens instead of max_tokens
+        is_gpt5 = model.startswith("gpt-5") or "gpt-5" in model
         if request.max_tokens:
-            if model.startswith("gpt-5") or "gpt-5" in model:
+            if is_gpt5:
                 params["max_completion_tokens"] = request.max_tokens
             else:
                 params["max_tokens"] = request.max_tokens
         
-        if request.temperature is not None:
+        # GPT-5 models only support temperature=1 (default), so don't pass temperature parameter
+        # For other models, use the requested temperature
+        if request.temperature is not None and not is_gpt5:
             params["temperature"] = request.temperature
+        # For GPT-5, temperature is always 1 (default), so we don't set it
         
         # Retry logic with exponential backoff
         import asyncio
