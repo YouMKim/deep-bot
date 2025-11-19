@@ -130,10 +130,11 @@ class ChunkedMemoryService:
         self,
         author: str,
         exclude_blacklisted: bool,
-        filter_authors: Optional[List[str]]
+        filter_authors: Optional[List[str]],
+        author_id: Optional[str] = None
     ) -> bool:
         """Check if author should be included (backward compatibility)."""
-        return self.author_filter.should_include(author, exclude_blacklisted, filter_authors)
+        return self.author_filter.should_include(author, exclude_blacklisted, filter_authors, author_id=author_id)
 
     # Delegate search methods
     def search(

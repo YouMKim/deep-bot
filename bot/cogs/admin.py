@@ -879,6 +879,45 @@ class Admin(commands.Cog):
             self.logger.error(f"Error resetting RAG settings: {e}", exc_info=True)
             await ctx.send(f"❌ Error resetting settings: {e}")
     
+    @commands.command(name='rag_enable_all', help='Enable all RAG techniques at once (Admin only)')
+    async def rag_enable_all(self, ctx):
+        """Enable all RAG techniques (Hybrid Search, Multi-Query, HyDE, Reranking)."""
+        # Manual owner check
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
+            await ctx.send("🚫 **Access Denied!** Only the bot admin can enable RAG techniques.")
+            return
+        
+        try:
+            # Enable all techniques
+            self.config.update_rag_setting('RAG_USE_HYBRID_SEARCH', True)
+            self.config.update_rag_setting('RAG_USE_MULTI_QUERY', True)
+            self.config.update_rag_setting('RAG_USE_HYDE', True)
+            self.config.update_rag_setting('RAG_USE_RERANKING', True)
+            
+            embed = discord.Embed(
+                title="✅ All RAG Techniques Enabled",
+                description="All RAG techniques have been enabled",
+                color=discord.Color.green()
+            )
+            
+            embed.add_field(
+                name="Enabled Techniques",
+                value=(
+                    "✅ Hybrid Search\n"
+                    "✅ Multi-Query\n"
+                    "✅ HyDE\n"
+                    "✅ Reranking"
+                ),
+                inline=False
+            )
+            
+            embed.set_footer(text="Settings updated (in-memory, resets to .env defaults on restart)")
+            
+            await ctx.send(embed=embed)
+        except Exception as e:
+            self.logger.error(f"Error enabling RAG techniques: {e}", exc_info=True)
+            await ctx.send(f"❌ Error enabling techniques: {e}")
+    
     @commands.command(name='compare_rag', help='Compare RAG output with different technique combinations (Admin only)')
     async def compare_rag(self, ctx, *, question: str):
         """
