@@ -14,6 +14,7 @@ class OpenAIProvider(BaseAIProvider):
         # GPT-5 Series (Latest - 2025)
         "gpt-5": {"prompt": 0.00125, "completion": 0.01},  # $1.25/$10 per 1M tokens
         "gpt-5-mini": {"prompt": 0.00025, "completion": 0.002},  # $0.25/$2 per 1M tokens
+        "gpt-5-mini-2025-08-07": {"prompt": 0.25, "completion": 2.00},  # $0.25/$2.00 per 1M tokens (snapshot)
         
         # GPT-4.1 Series
         "gpt-4-1": {"prompt": 0.002, "completion": 0.008},  # $2/$8 per 1M tokens
@@ -36,7 +37,7 @@ class OpenAIProvider(BaseAIProvider):
         "gpt-3.5-turbo": {"prompt": 0.0005, "completion": 0.0015},  # $0.50/$1.50 per 1M tokens
     }
     
-    def __init__(self, api_key: str, default_model: str = "gpt-4o-mini"):
+    def __init__(self, api_key: str, default_model: str = "gpt-5-mini-2025-08-07"):
         if not api_key:
             raise ValueError("OpenAIProvider requires a valid API key")
         self.client = AsyncOpenAI(api_key=api_key)
@@ -54,7 +55,7 @@ class OpenAIProvider(BaseAIProvider):
         
         # GPT-5 models use max_completion_tokens instead of max_tokens
         if request.max_tokens:
-            if model.startswith("gpt-5"):
+            if model.startswith("gpt-5") or "gpt-5" in model:
                 params["max_completion_tokens"] = request.max_tokens
             else:
                 params["max_tokens"] = request.max_tokens

@@ -24,7 +24,7 @@ def create_provider(config: AIConfig) -> BaseAIProvider:
     
     if config.model_name == "openai":
         api_key = config.open_api_key
-        default_model = "gpt-4o-mini"  # Stable and always returns content
+        default_model = "gpt-5-mini-2025-08-07"  # Latest GPT-5 mini snapshot (2025-08-07)
     elif config.model_name == "anthropic":
         api_key = config.anthopic_api_key
         default_model = "claude-haiku-4-5"  # Latest 2025 model
