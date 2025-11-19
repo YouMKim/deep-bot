@@ -12,6 +12,7 @@ from typing import Optional
 load_dotenv()
 
 
+
 class Config:
     """Configuration class to manage all bot settings."""
 
@@ -67,6 +68,13 @@ class Config:
     RAG_DEFAULT_MAX_CONTEXT_TOKENS: int = int(os.getenv("RAG_DEFAULT_MAX_CONTEXT_TOKENS", "4000"))
     RAG_DEFAULT_TEMPERATURE: float = float(os.getenv("RAG_DEFAULT_TEMPERATURE", "0.7"))
     RAG_DEFAULT_STRATEGY: str = os.getenv("RAG_DEFAULT_STRATEGY", "tokens")
+    
+    # RAG Technique Settings
+    RAG_USE_HYBRID_SEARCH: bool = os.getenv("RAG_USE_HYBRID_SEARCH", "False").lower() == "true"
+    RAG_USE_MULTI_QUERY: bool = os.getenv("RAG_USE_MULTI_QUERY", "False").lower() == "true"
+    RAG_USE_HYDE: bool = os.getenv("RAG_USE_HYDE", "False").lower() == "true"
+    RAG_USE_RERANKING: bool = os.getenv("RAG_USE_RERANKING", "False").lower() == "true"
+    RAG_MAX_OUTPUT_TOKENS: int = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "1000"))
 
     @classmethod
     def load_blacklist(cls):
@@ -122,3 +130,59 @@ class Config:
         intents.guilds = True  # If you need guild information
 
         return intents
+    
+    @classmethod
+    def update_rag_setting(cls, key: str, value) -> None:
+        """
+        Update a RAG setting in Config (in-memory only).
+        Settings reset to .env defaults on bot restart.
+        
+        Args:
+            key: Setting name (e.g., 'RAG_USE_HYBRID_SEARCH', 'RAG_DEFAULT_STRATEGY')
+            value: New value (bool for flags, int for tokens, str for strategy)
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Validate key
+        valid_keys = [
+            'RAG_USE_HYBRID_SEARCH', 'RAG_USE_MULTI_QUERY', 'RAG_USE_HYDE',
+            'RAG_USE_RERANKING', 'RAG_MAX_OUTPUT_TOKENS', 'RAG_DEFAULT_STRATEGY'
+        ]
+        if key not in valid_keys:
+            raise ValueError(f"Invalid RAG setting key: {key}. Valid keys: {valid_keys}")
+        
+        # Convert value to proper type
+        if key == 'RAG_MAX_OUTPUT_TOKENS':
+            typed_value = int(value)
+        elif key == 'RAG_DEFAULT_STRATEGY':
+            # Validate strategy name
+            from chunking.constants import ChunkStrategy
+            try:
+                ChunkStrategy(str(value).lower())
+                typed_value = str(value).lower()
+            except ValueError:
+                valid_strategies = ", ".join([s.value for s in ChunkStrategy])
+                raise ValueError(f"Invalid strategy '{value}'. Valid strategies: {valid_strategies}")
+        else:
+            typed_value = bool(value) if isinstance(value, str) else value
+        
+        # Update Config attribute (in-memory only)
+        setattr(cls, key, typed_value)
+        
+        logger.info(f"Updated {key} = {typed_value} (in-memory, resets to .env defaults on restart)")
+    
+    @classmethod
+    def reset_rag_settings(cls) -> None:
+        """Reset all RAG settings to .env defaults (in-memory only)."""
+        # Reload from environment variables
+        cls.RAG_USE_HYBRID_SEARCH = os.getenv("RAG_USE_HYBRID_SEARCH", "False").lower() == "true"
+        cls.RAG_USE_MULTI_QUERY = os.getenv("RAG_USE_MULTI_QUERY", "False").lower() == "true"
+        cls.RAG_USE_HYDE = os.getenv("RAG_USE_HYDE", "False").lower() == "true"
+        cls.RAG_USE_RERANKING = os.getenv("RAG_USE_RERANKING", "False").lower() == "true"
+        cls.RAG_MAX_OUTPUT_TOKENS = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "1000"))
+        cls.RAG_DEFAULT_STRATEGY = os.getenv("RAG_DEFAULT_STRATEGY", "tokens")
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("Reset all RAG settings to .env defaults")

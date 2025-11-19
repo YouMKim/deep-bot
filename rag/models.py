@@ -27,6 +27,7 @@ class RAGConfig:
     use_hyde: bool = False
     use_reranking: bool = False
     reranking_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    max_output_tokens: int = 1000
 
     def __post_init__(self):
         if self.top_k < 1:

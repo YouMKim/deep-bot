@@ -109,7 +109,13 @@ class RetrievalService:
 
             for index, document in enumerate(documents[0]):
                 metadata = metadata_list[index] if index < len(metadata_list) else {}
-                author = metadata.get('author', '')
+                
+                author = (
+                    metadata.get('author') or 
+                    metadata.get('primary_author_name') or 
+                    metadata.get('primary_author_id') or 
+                    ''
+                )
                 
                 similarity = (
                     1 - distance_list[index]

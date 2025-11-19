@@ -122,7 +122,13 @@ class BM25Service:
         for doc_data, score in scored_docs:
             document = doc_data['document']
             metadata = doc_data['metadata']
-            author = metadata.get('author', '')
+            
+            author = (
+                metadata.get('author') or 
+                metadata.get('primary_author_name') or 
+                metadata.get('primary_author_id') or 
+                ''
+            )
 
             # Apply filters using helper method
             if not self.author_filter.should_include(author, exclude_blacklisted, filter_authors):

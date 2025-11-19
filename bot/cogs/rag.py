@@ -38,14 +38,61 @@ class RAG(commands.Cog):
             'temperature': self.config.RAG_DEFAULT_TEMPERATURE,
             'strategy': self.config.RAG_DEFAULT_STRATEGY,
             'filter_authors': filter_authors,
+            'use_hybrid_search': self.config.RAG_USE_HYBRID_SEARCH,
+            'use_multi_query': self.config.RAG_USE_MULTI_QUERY,
+            'use_hyde': self.config.RAG_USE_HYDE,
+            'use_reranking': self.config.RAG_USE_RERANKING,
+            'max_output_tokens': self.config.RAG_MAX_OUTPUT_TOKENS,
         }
         # Override with any custom settings
         config_dict.update(overrides)
         return RAGConfig(**config_dict)
 
+    def _parse_strategy_from_question(self, question: str) -> tuple[Optional[str], str]:
+        """
+        Parse optional strategy from question string.
+        
+        Supports formats:
+        - "strategy:single What is..."
+        - "single What is..."
+        
+        Returns:
+            (strategy, cleaned_question) - strategy is None if not found
+        """
+        from chunking.constants import ChunkStrategy
+        
+        question = question.strip()
+        
+        # Check for "strategy:xxx" format
+        if question.lower().startswith('strategy:'):
+            parts = question.split(':', 1)
+            if len(parts) == 2:
+                strategy_candidate = parts[1].split()[0].lower()
+                try:
+                    ChunkStrategy(strategy_candidate)
+                    remaining_question = parts[1][len(strategy_candidate):].strip()
+                    return strategy_candidate, remaining_question
+                except ValueError:
+                    pass
+        
+        # Check if first word is a valid strategy
+        words = question.split()
+        if len(words) > 1:
+            first_word = words[0].lower()
+            try:
+                ChunkStrategy(first_word)
+                # Valid strategy found
+                remaining_question = ' '.join(words[1:])
+                return first_word, remaining_question
+            except ValueError:
+                pass
+        
+        # No strategy found, return question as-is
+        return None, question
+
     @commands.command(
         name='ask',
-        help='Ask a question about Discord conversations. Mention users to filter to their messages.'
+        help='Ask a question about Discord conversations. Use "strategy:xxx" or "xxx" prefix to specify chunking strategy.'
     )
     @cooldown(rate=5, per=60, type=BucketType.user)  # 5 requests per minute per user
     async def ask(self, ctx, *, question: str):
@@ -55,18 +102,23 @@ class RAG(commands.Cog):
         Usage: 
             !ask What was decided about the database?
             !ask @Alice what did you say about the schema?
+            !ask strategy:single What was decided?
+            !ask tokens What was decided?
         
         Rate limit: 5 questions per minute per user.
         """
-        # Validate before processing
+        # Parse strategy from question if present
+        strategy, cleaned_question = self._parse_strategy_from_question(question)
+        
+        # Validate cleaned question
         try:
-            question = QueryValidator.validate(question)
+            cleaned_question = QueryValidator.validate(cleaned_question)
         except ValueError as e:
             await ctx.send(f"❌ {str(e)}")
             return
         
         async with ctx.typing():
-            self.logger.info(f"User {ctx.author} asked: {question}")
+            self.logger.info(f"User {ctx.author} asked: {cleaned_question}" + (f" (strategy: {strategy})" if strategy else ""))
             
             # Parse mentioned users from the message
             mentioned_users = []
@@ -74,18 +126,47 @@ class RAG(commands.Cog):
                 mentioned_users = [user.display_name for user in ctx.message.mentions]
                 self.logger.info(f"Filtering to authors: {mentioned_users}")
             
-            config = self._create_base_config(
-                filter_authors=mentioned_users if mentioned_users else None,
-                show_sources=False,  # Simple mode = no sources
-            )
+            config_overrides = {
+                'filter_authors': mentioned_users if mentioned_users else None,
+                'show_sources': False,  # Simple mode = no sources
+            }
             
-            result = await self.pipeline.answer_question(question, config)
+            # Add strategy override if specified
+            if strategy:
+                config_overrides['strategy'] = strategy
             
-            # Add author filter info to title if applicable
+            config = self._create_base_config(**config_overrides)
+            
+            result = await self.pipeline.answer_question(cleaned_question, config)
+            
+            # Build title with enabled features and filters
             title = "💡 Answer"
+            title_parts = []
+            
+            # Show enabled features
+            features = []
+            if config.use_hybrid_search:
+                features.append("Hybrid")
+            if config.use_multi_query:
+                features.append("Multi-Query")
+            if config.use_hyde:
+                features.append("HyDE")
+            if config.use_reranking:
+                features.append("Reranking")
+            if features:
+                title_parts.append(" | ".join(features))
+            
+            # Show strategy if custom
+            if strategy:
+                title_parts.append(f"strategy: {strategy}")
+            
+            # Show author filter if applicable
             if mentioned_users:
                 authors_str = ", ".join(mentioned_users)
-                title = f"💡 Answer (from {authors_str})"
+                title_parts.append(f"from {authors_str}")
+            
+            if title_parts:
+                title = f"💡 Answer ({', '.join(title_parts)})"
             
             embed = discord.Embed(
                 title=title,
@@ -105,62 +186,6 @@ class RAG(commands.Cog):
             
             self.bot._rag_cache = getattr(self.bot, '_rag_cache', {})
             self.bot._rag_cache[message.id] = result
-
-    @commands.command(name='ask_hybrid')
-    @cooldown(rate=3, per=60, type=BucketType.user)  # 3 requests per minute (more expensive)
-    async def ask_hybrid(self, ctx, *, question: str):
-        """
-        Ask a question using hybrid search (BM25 + vector).
-
-        Usage: !ask_hybrid What was decided about the database?
-        
-        Rate limit: 3 questions per minute per user (more expensive than regular ask).
-        """
-        # Validate before processing
-        try:
-            question = QueryValidator.validate(question)
-        except ValueError as e:
-            await ctx.send(f"❌ {str(e)}")
-            return
-        
-        async with ctx.typing():
-            self.logger.info(f"User {ctx.author} asked (hybrid): {question}")
-
-            mentioned_users = []
-            if ctx.message.mentions:
-                mentioned_users = [user.display_name for user in ctx.message.mentions]
-
-            config = self._create_base_config(
-                filter_authors=mentioned_users if mentioned_users else None,
-                use_hybrid_search=True,
-                bm25_weight=0.5,
-                vector_weight=0.5,
-            )
-
-            result = await self.pipeline.answer_question(question, config)
-
-            title = "💡 Answer (Hybrid Search)"
-            if mentioned_users:
-                authors_str = ", ".join(mentioned_users)
-                title = f"💡 Answer (Hybrid - {authors_str})"
-
-            embed = discord.Embed(
-                title=title,
-                description=result.answer,
-                color=discord.Color.green()  
-            )
-
-            sources_count = len(result.sources) if result.sources else 0
-            embed.set_footer(
-                text=f"Model: {result.model} | Cost: ${result.cost:.4f} | {sources_count} sources"
-            )
-
-            message = await ctx.send(embed=embed)
-            await message.add_reaction("📚")
-
-            self.bot._rag_cache = getattr(self.bot, '_rag_cache', {})
-            self.bot._rag_cache[message.id] = result
-
 
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction, user):
@@ -274,18 +299,6 @@ class RAG(commands.Cog):
                 "This helps prevent API cost overruns and ensures fair usage."
             ),
             limit_text="5 questions per minute"
-        )
-
-    @ask_hybrid.error
-    async def ask_hybrid_error(self, ctx, error):
-        """Handle errors for the ask_hybrid command."""
-        await self._handle_cooldown_error(
-            ctx, error,
-            rate_limit_msg=(
-                "Hybrid search is expensive!\n\n"
-                "Consider using regular `!ask` for faster queries."
-            ),
-            limit_text="3 hybrid questions per minute"
         )
 
 async def setup(bot):
