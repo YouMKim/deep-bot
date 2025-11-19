@@ -90,7 +90,7 @@ class RAGPipeline:
             prompt = self._create_rag_prompt(question, context)
             generation_result = await self.ai_service.generate(
                 prompt=prompt,
-                max_tokens=1000, 
+                max_tokens=config.max_output_tokens, 
                 temperature=config.temperature,
             )
             
@@ -129,15 +129,23 @@ class RAGPipeline:
         5. Return top_k most similar chunks
         """
         
+        # Handle HyDE: Generate hypothetical answer and use it for search
+        search_query = query
+        if config.use_hyde:
+            self.logger.info("Generating HyDE document for query enhancement")
+            hyde_doc = await self.query_enhancer.generate_hyde_document(query)
+            search_query = hyde_doc  # Use HyDE document instead of original query
+        
         # Handle multi-query first (it does its own retrieval)
         if config.use_multi_query:
-            return await self._retrieve_multi_query(query, config)
+            return await self._retrieve_multi_query(search_query, config)
         
         filter_info = f" (filtering to authors: {config.filter_authors})" if config.filter_authors else ""
         search_method = "hybrid" if config.use_hybrid_search else "vector"
+        hyde_info = " (HyDE)" if config.use_hyde else ""
         self.logger.info(
             f"Retrieving top {config.top_k} chunks with strategy: {config.strategy} "
-            f"using {search_method} search{filter_info}"
+            f"using {search_method} search{hyde_info}{filter_info}"
         )
 
         try:
@@ -154,7 +162,7 @@ class RAGPipeline:
         # Use hybrid search if enabled
         if config.use_hybrid_search:
             chunks = self.chunked_memory.search_hybrid(
-                query=query,
+                query=search_query,  # Use HyDE-enhanced query if enabled
                 strategy=strategy,
                 top_k=fetch_k,  # Fetch more if reranking
                 bm25_weight=config.bm25_weight,
@@ -164,7 +172,7 @@ class RAGPipeline:
         else:
             # Standard vector search
             chunks = self.chunked_memory.search(
-                query=query,
+                query=search_query,  # Use HyDE-enhanced query if enabled
                 strategy=strategy,
                 top_k=fetch_k,  # Fetch more if reranking
                 filter_authors=config.filter_authors,

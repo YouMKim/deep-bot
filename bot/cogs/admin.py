@@ -740,6 +740,281 @@ class Admin(commands.Cog):
             self.logger.error(f"Error in rechunk command: {e}", exc_info=True)
             await ctx.send(f"❌ Error: {e}")
     
+    @commands.command(name='rag_settings', help='Show current RAG technique settings (Admin only)')
+    async def rag_settings(self, ctx):
+        """Show current RAG technique settings."""
+        # Manual owner check
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
+            await ctx.send("🚫 **Access Denied!** Only the bot admin can view RAG settings.")
+            return
+        
+        embed = discord.Embed(
+            title="⚙️ RAG Technique Settings",
+            description="Current configuration for advanced RAG techniques",
+            color=discord.Color.blue()
+        )
+        
+        embed.add_field(
+            name="🔍 Hybrid Search",
+            value="✅ Enabled" if self.config.RAG_USE_HYBRID_SEARCH else "❌ Disabled",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🔄 Multi-Query",
+            value="✅ Enabled" if self.config.RAG_USE_MULTI_QUERY else "❌ Disabled",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📝 HyDE",
+            value="✅ Enabled" if self.config.RAG_USE_HYDE else "❌ Disabled",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🎯 Reranking",
+            value="✅ Enabled" if self.config.RAG_USE_RERANKING else "❌ Disabled",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📊 Max Output Tokens",
+            value=f"{self.config.RAG_MAX_OUTPUT_TOKENS}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🔍 Default Chunking Strategy",
+            value=f"`{self.config.RAG_DEFAULT_STRATEGY}`",
+            inline=True
+        )
+        
+        embed.set_footer(text="Use !rag_set <setting> <value> to change settings")
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command(name='rag_set', help='Set a RAG technique setting (Admin only)')
+    async def rag_set(self, ctx, setting: str = None, value: str = None):
+        """
+        Set a RAG technique setting.
+        
+        Usage:
+            !rag_set RAG_USE_HYBRID_SEARCH true
+            !rag_set RAG_MAX_OUTPUT_TOKENS 2000
+        """
+        # Manual owner check
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
+            await ctx.send("🚫 **Access Denied!** Only the bot admin can change RAG settings.")
+            return
+        
+        if not setting or value is None:
+            await ctx.send(
+                "❌ Usage: `!rag_set <setting> <value>`\n\n"
+                "Valid settings:\n"
+                "• `RAG_USE_HYBRID_SEARCH` (true/false)\n"
+                "• `RAG_USE_MULTI_QUERY` (true/false)\n"
+                "• `RAG_USE_HYDE` (true/false)\n"
+                "• `RAG_USE_RERANKING` (true/false)\n"
+                "• `RAG_MAX_OUTPUT_TOKENS` (integer)\n"
+                "• `RAG_DEFAULT_STRATEGY` (single/tokens/author/temporal/conversation/sliding_window)"
+            )
+            return
+        
+        try:
+            # Update setting
+            self.config.update_rag_setting(setting, value)
+            
+            # Get updated value
+            updated_value = getattr(self.config, setting)
+            
+            embed = discord.Embed(
+                title="✅ Setting Updated",
+                description=f"**{setting}** = `{updated_value}`",
+                color=discord.Color.green()
+            )
+            embed.set_footer(text="Setting updated (in-memory, resets to .env defaults on restart)")
+            
+            await ctx.send(embed=embed)
+        except ValueError as e:
+            await ctx.send(f"❌ {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Error updating RAG setting: {e}", exc_info=True)
+            await ctx.send(f"❌ Error updating setting: {e}")
+    
+    @commands.command(name='rag_reset', help='Reset all RAG settings to defaults (Admin only)')
+    async def rag_reset(self, ctx):
+        """Reset all RAG settings to defaults."""
+        # Manual owner check
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
+            await ctx.send("🚫 **Access Denied!** Only the bot admin can reset RAG settings.")
+            return
+        
+        try:
+            self.config.reset_rag_settings()
+            
+            embed = discord.Embed(
+                title="✅ Settings Reset",
+                description="All RAG settings have been reset to defaults",
+                color=discord.Color.green()
+            )
+            
+            embed.add_field(
+                name="Default Values",
+                value=(
+                    "• Hybrid Search: ❌ Disabled\n"
+                    "• Multi-Query: ❌ Disabled\n"
+                    "• HyDE: ❌ Disabled\n"
+                    "• Reranking: ❌ Disabled\n"
+                    "• Max Output Tokens: 1000\n"
+                    "• Default Strategy: tokens"
+                ),
+                inline=False
+            )
+            
+            embed.set_footer(text="Settings reset to .env defaults (in-memory)")
+            
+            await ctx.send(embed=embed)
+        except Exception as e:
+            self.logger.error(f"Error resetting RAG settings: {e}", exc_info=True)
+            await ctx.send(f"❌ Error resetting settings: {e}")
+    
+    @commands.command(name='compare_rag', help='Compare RAG output with different technique combinations (Admin only)')
+    async def compare_rag(self, ctx, *, question: str):
+        """
+        Compare RAG output with different technique combinations.
+        
+        Runs the query 6 times:
+        1. All techniques OFF (baseline)
+        2. Hybrid Search ON only
+        3. Multi-Query ON only
+        4. HyDE ON only
+        5. Reranking ON only
+        6. All techniques ON
+        """
+        # Manual owner check
+        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
+            await ctx.send("🚫 **Access Denied!** Only the bot admin can compare RAG techniques.")
+            return
+        
+        if not question:
+            await ctx.send("❌ Please provide a question to compare.")
+            return
+        
+        # Validate question
+        try:
+            from rag.validation import QueryValidator
+            question = QueryValidator.validate(question)
+        except ValueError as e:
+            await ctx.send(f"❌ {str(e)}")
+            return
+        
+        status_msg = await ctx.send("🔄 Running comparison queries... This may take a while.")
+        
+        try:
+            from rag.pipeline import RAGPipeline
+            from rag.models import RAGConfig
+            
+            pipeline = RAGPipeline(config=self.config)
+            
+            # Define test configurations
+            test_configs = [
+                ("Baseline (All OFF)", {
+                    'use_hybrid_search': False,
+                    'use_multi_query': False,
+                    'use_hyde': False,
+                    'use_reranking': False,
+                }),
+                ("Hybrid Search Only", {
+                    'use_hybrid_search': True,
+                    'use_multi_query': False,
+                    'use_hyde': False,
+                    'use_reranking': False,
+                }),
+                ("Multi-Query Only", {
+                    'use_hybrid_search': False,
+                    'use_multi_query': True,
+                    'use_hyde': False,
+                    'use_reranking': False,
+                }),
+                ("HyDE Only", {
+                    'use_hybrid_search': False,
+                    'use_multi_query': False,
+                    'use_hyde': True,
+                    'use_reranking': False,
+                }),
+                ("Reranking Only", {
+                    'use_hybrid_search': False,
+                    'use_multi_query': False,
+                    'use_hyde': False,
+                    'use_reranking': True,
+                }),
+                ("All Techniques ON", {
+                    'use_hybrid_search': True,
+                    'use_multi_query': True,
+                    'use_hyde': True,
+                    'use_reranking': True,
+                }),
+            ]
+            
+            results = []
+            total_cost = 0.0
+            
+            for i, (name, config_overrides) in enumerate(test_configs):
+                await status_msg.edit(
+                    content=f"🔄 Running comparison ({i+1}/6): {name}..."
+                )
+                
+                config = RAGConfig(**config_overrides)
+                result = await pipeline.answer_question(question, config)
+                
+                results.append({
+                    'name': name,
+                    'result': result,
+                })
+                total_cost += result.cost
+            
+            await status_msg.delete()
+            
+            # Create comparison embed
+            embed = discord.Embed(
+                title="🔬 RAG Technique Comparison",
+                description=f"**Question:** {question}",
+                color=discord.Color.purple()
+            )
+            
+            # Add each result as a field (truncate answers to ~200 chars)
+            for result_data in results:
+                name = result_data['name']
+                result = result_data['result']
+                
+                answer_preview = result.answer[:200] + "..." if len(result.answer) > 200 else result.answer
+                
+                embed.add_field(
+                    name=f"{name}",
+                    value=(
+                        f"**Answer:** {answer_preview}\n"
+                        f"**Cost:** ${result.cost:.4f} | "
+                        f"**Sources:** {len(result.sources)} | "
+                        f"**Tokens:** {result.tokens_used}"
+                    ),
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="💰 Total Cost",
+                value=f"${total_cost:.4f}",
+                inline=True
+            )
+            
+            embed.set_footer(text="Use !rag_set to enable/disable techniques globally")
+            
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            self.logger.error(f"Error in compare_rag: {e}", exc_info=True)
+            await status_msg.edit(content=f"❌ Error running comparison: {e}")
+    
     @commands.command(name='ai_provider', help='Switch AI provider (Admin only)')
     async def ai_provider(self, ctx, provider: str = None):
         """
@@ -805,6 +1080,11 @@ class Admin(commands.Cog):
             if self.ai_service:
                 self.ai_service = AIService(provider_name=provider.lower())
             
+            # Update RAG cog
+            rag_cog = self.bot.get_cog("RAG")
+            if rag_cog:
+                rag_cog.pipeline.ai_service = AIService(provider_name=provider.lower())
+            
             embed = discord.Embed(
                 title="✅ Provider Switched",
                 description=f"Now using: **{provider}**",
@@ -825,6 +1105,8 @@ class Admin(commands.Cog):
                 updated_cogs.append("Basic")
             if self.ai_service:
                 updated_cogs.append("Admin")
+            if rag_cog:
+                updated_cogs.append("RAG")
             
             embed.add_field(
                 name="Updated Cogs",
