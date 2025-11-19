@@ -535,18 +535,26 @@ class Chatbot(commands.Cog):
         """
         try:
             # Build RAG config using shared utility method
+            # Use RAG-specific token limit (can be longer for detailed answers)
             config = self.config.create_rag_config(
                 similarity_threshold=self.config.CHATBOT_RAG_THRESHOLD,
                 temperature=self.config.CHATBOT_TEMPERATURE,
                 filter_authors=mentioned_users if mentioned_users else None,
-                max_output_tokens=self.config.CHATBOT_MAX_TOKENS,
+                max_output_tokens=self.config.CHATBOT_RAG_MAX_TOKENS,
             )
             
             # Get answer from RAG pipeline
             result = await self.rag_pipeline.answer_question(question, config)
             
+            # Summarize RAG response only if it exceeds Discord's 2000 char limit
+            content = result.answer
+            DISCORD_CHAR_LIMIT = 2000
+            if len(content) > DISCORD_CHAR_LIMIT:
+                logger.info(f"RAG response ({len(content)} chars) exceeds Discord limit ({DISCORD_CHAR_LIMIT}), summarizing...")
+                content = await self._summarize_if_needed(content, question, is_rag=True)
+            
             return {
-                'content': result.answer,
+                'content': content,
                 'sources': result.sources,
                 'cost': result.cost,
                 'model': result.model,
@@ -655,12 +663,19 @@ class Chatbot(commands.Cog):
                 channel_context
             )
             
-            # Generate response
+            # Generate response with conversational token limit (shorter for chat)
             result = await self.ai_service.generate(
                 prompt=prompt,
-                max_tokens=self.config.CHATBOT_MAX_TOKENS,
+                max_tokens=self.config.CHATBOT_CHAT_MAX_TOKENS,
                 temperature=self.config.CHATBOT_TEMPERATURE
             )
+            
+            # If response is long, try to summarize it for more conversational feel
+            content = result['content']
+            if len(content) > 800:  # If response is longer than ~800 chars (≈200 tokens)
+                content = await self._summarize_if_needed(content, message, is_rag=False)
+            
+            result['content'] = content
             
             return {
                 'content': result['content'],
@@ -678,6 +693,59 @@ class Chatbot(commands.Cog):
                 'tokens_total': 0,
                 'mode': 'chat'
             }
+    
+    async def _summarize_if_needed(self, content: str, original_message: str, is_rag: bool = False) -> str:
+        """
+        Summarize long responses to keep them conversational.
+        
+        Args:
+            content: Long response content
+            original_message: Original user message for context
+            is_rag: Whether this is a RAG response (allows slightly longer summaries)
+            
+        Returns:
+            Summarized or original content
+        """
+        # Different thresholds for chat vs RAG
+        # RAG: Only summarize if exceeds Discord's 2000 char limit
+        # Chat: Summarize at 800 chars to keep it conversational
+        DISCORD_CHAR_LIMIT = 2000
+        threshold = DISCORD_CHAR_LIMIT if is_rag else 800
+        if len(content) <= threshold:
+            return content
+        
+        try:
+            # Create a summarization prompt
+            context_type = "RAG answer" if is_rag else "response"
+            max_summary_tokens = 300 if is_rag else 200
+            content_preview_length = 2000 if is_rag else 1500
+            
+            summarize_prompt = f"""The user asked: "{original_message[:200]}"
+
+The AI generated this {context_type}, but it's too long for a conversational Discord chat. Please summarize it to be more concise and conversational (aim for 3-5 sentences for RAG, 2-4 for chat, keep the key points):
+
+{content[:content_preview_length]}
+
+Provide a concise, conversational summary:"""
+            
+            # Generate summary with appropriate token limit
+            summary_result = await self.ai_service.generate(
+                prompt=summarize_prompt,
+                max_tokens=max_summary_tokens,
+                temperature=0.7  # Lower temperature for more focused summary
+            )
+            
+            summary = summary_result.get('content', '').strip()
+            if summary and len(summary) < len(content):
+                logger.info(f"Summarized {'RAG' if is_rag else 'chat'} response from {len(content)} to {len(summary)} chars")
+                return summary
+            else:
+                # If summary failed or wasn't shorter, return original
+                return content
+        except Exception as e:
+            logger.warning(f"Failed to summarize response: {e}")
+            # Return original content if summarization fails
+            return content
     
     @commands.command(name='chatbot_reset', help='Reset channel conversation history')
     async def reset_conversation(self, ctx):
@@ -777,7 +845,7 @@ class Chatbot(commands.Cog):
         )
         embed.add_field(
             name="Max Tokens",
-            value=str(self.config.CHATBOT_MAX_TOKENS),
+            value=f"{self.config.CHATBOT_CHAT_MAX_TOKENS} (chat) / {self.config.CHATBOT_RAG_MAX_TOKENS} (RAG)",
             inline=True
         )
         embed.add_field(

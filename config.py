@@ -83,7 +83,9 @@ class Config:
     CHATBOT_CHANNEL_ID: int = int(os.getenv("CHATBOT_CHANNEL_ID", "0"))
     CHATBOT_MAX_HISTORY: int = int(os.getenv("CHATBOT_MAX_HISTORY", "15"))
     CHATBOT_SESSION_TIMEOUT: int = int(os.getenv("CHATBOT_SESSION_TIMEOUT", "1800"))  # 30 minutes
-    CHATBOT_MAX_TOKENS: int = int(os.getenv("CHATBOT_MAX_TOKENS", "400"))
+    CHATBOT_MAX_TOKENS: int = int(os.getenv("CHATBOT_MAX_TOKENS", "400"))  # Default/fallback
+    CHATBOT_CHAT_MAX_TOKENS: int = int(os.getenv("CHATBOT_CHAT_MAX_TOKENS", "250"))  # Conversational chat
+    CHATBOT_RAG_MAX_TOKENS: int = int(os.getenv("CHATBOT_RAG_MAX_TOKENS", "500"))  # RAG responses (≈2000 chars, Discord limit)
     CHATBOT_TEMPERATURE: float = float(os.getenv("CHATBOT_TEMPERATURE", "0.8"))
     CHATBOT_USE_RAG: bool = os.getenv("CHATBOT_USE_RAG", "True").lower() == "true"
     CHATBOT_RAG_THRESHOLD: float = float(os.getenv("CHATBOT_RAG_THRESHOLD", "0.01"))
@@ -260,6 +262,10 @@ Guidelines:
         # Validate max tokens
         if cls.CHATBOT_MAX_TOKENS < 50 or cls.CHATBOT_MAX_TOKENS > 2000:
             errors.append("CHATBOT_MAX_TOKENS must be between 50 and 2000")
+        if cls.CHATBOT_CHAT_MAX_TOKENS < 50 or cls.CHATBOT_CHAT_MAX_TOKENS > 1000:
+            errors.append("CHATBOT_CHAT_MAX_TOKENS must be between 50 and 1000")
+        if cls.CHATBOT_RAG_MAX_TOKENS < 100 or cls.CHATBOT_RAG_MAX_TOKENS > 1000:
+            errors.append("CHATBOT_RAG_MAX_TOKENS must be between 100 and 1000 (Discord limit is ~2000 chars)")
         
         # Validate temperature
         if not 0.0 <= cls.CHATBOT_TEMPERATURE <= 2.0:
