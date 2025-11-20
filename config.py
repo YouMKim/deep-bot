@@ -119,6 +119,12 @@ Guidelines:
     SOCIAL_CREDIT_DECAY_NEGATIVE: int = int(os.getenv("SOCIAL_CREDIT_DECAY_NEGATIVE", "-10"))
     SOCIAL_CREDIT_GROWTH_POSITIVE: int = int(os.getenv("SOCIAL_CREDIT_GROWTH_POSITIVE", "10"))
 
+    # Evaluate Command Configuration
+    EVALUATE_ENABLED: bool = os.getenv("EVALUATE_ENABLED", "True").lower() == "true"
+    EVALUATE_MAX_TOKENS: int = int(os.getenv("EVALUATE_MAX_TOKENS", "1500"))
+    EVALUATE_TEMPERATURE: float = float(os.getenv("EVALUATE_TEMPERATURE", "0.3"))
+    EVALUATE_PROVIDER: Optional[str] = os.getenv("EVALUATE_PROVIDER")  # Defaults to AI_DEFAULT_PROVIDER if None
+
     @classmethod
     def load_blacklist(cls):
         """Load blacklisted user IDs from environment variable."""
