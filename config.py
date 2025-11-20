@@ -109,6 +109,15 @@ Guidelines:
 - Reference people by their Discord display names when mentioning past conversations
 - Be friendly but not overly casual"""
     )
+    
+    # Social Credit Configuration
+    SOCIAL_CREDIT_ENABLED: bool = os.getenv("SOCIAL_CREDIT_ENABLED", "True").lower() == "true"
+    SOCIAL_CREDIT_INITIAL_MEAN: int = int(os.getenv("SOCIAL_CREDIT_INITIAL_MEAN", "0"))
+    SOCIAL_CREDIT_INITIAL_STD: int = int(os.getenv("SOCIAL_CREDIT_INITIAL_STD", "200"))
+    SOCIAL_CREDIT_PENALTY_ADMIN_COMMAND: int = int(os.getenv("SOCIAL_CREDIT_PENALTY_ADMIN_COMMAND", "-500"))
+    SOCIAL_CREDIT_PENALTY_QUERY_FILTER: int = int(os.getenv("SOCIAL_CREDIT_PENALTY_QUERY_FILTER", "-500"))
+    SOCIAL_CREDIT_DECAY_NEGATIVE: int = int(os.getenv("SOCIAL_CREDIT_DECAY_NEGATIVE", "-10"))
+    SOCIAL_CREDIT_GROWTH_POSITIVE: int = int(os.getenv("SOCIAL_CREDIT_GROWTH_POSITIVE", "10"))
 
     @classmethod
     def load_blacklist(cls):

@@ -41,8 +41,14 @@ class GeminiProvider(BaseAIProvider):
         self.validate_request(request)
         model = request.model or self.default_model
         
-        # Create model instance
-        genai_model = self.client(model)
+        # Create model instance with optional system instruction
+        if request.system_prompt:
+            genai_model = self.client(
+                model,
+                system_instruction=request.system_prompt
+            )
+        else:
+            genai_model = self.client(model)
         
         # Prepare generation config
         generation_config = {}

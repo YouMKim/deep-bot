@@ -36,6 +36,8 @@ class RAGPipeline:
         self,
         question: str,
         config: Optional[RAGConfig] = None,
+        user_id: Optional[str] = None,
+        user_display_name: Optional[str] = None,
     ) -> RAGResult:
         """
         Execute the complete RAG pipeline.
@@ -53,7 +55,12 @@ class RAGPipeline:
         
         # Stage 0: Validate input
         try:
-            question = QueryValidator.validate(question)
+            question = await QueryValidator.validate(
+                question,
+                user_id=user_id,
+                user_display_name=user_display_name,
+                social_credit_manager=getattr(self.ai_service, 'social_credit_manager', None)
+            )
         except ValueError as e:
             self.logger.warning(f"Query validation failed: {e}")
             return RAGResult(
@@ -92,6 +99,8 @@ class RAGPipeline:
                 prompt=prompt,
                 max_tokens=config.max_output_tokens, 
                 temperature=config.temperature,
+                user_id=user_id,
+                user_display_name=user_display_name,
             )
             
             # Stage 5: Return Result
@@ -181,14 +190,19 @@ class RAGPipeline:
         self.logger.info(f"Retrieved {len(chunks)} chunks")
         
         # Re-rank if enabled (AFTER retrieval)
+        # Run reranking in executor to avoid blocking event loop
         if config.use_reranking and chunks:
             if self.reranker is None:
                 self.reranker = ReRankingService()
 
-            chunks = self.reranker.rerank(
-                query=query,
-                chunks=chunks,
-                top_k=config.top_k  # Return top_k after reranking
+            import asyncio
+            loop = asyncio.get_event_loop()
+            chunks = await loop.run_in_executor(
+                None,
+                self.reranker.rerank,
+                query,
+                chunks,
+                config.top_k  # Return top_k after reranking
             )
             self.logger.info(f"Re-ranked to {len(chunks)} chunks")
 

@@ -49,9 +49,16 @@ class OpenAIProvider(BaseAIProvider):
         start_time = time.time()
         self.validate_request(request)
         model = request.model or self.default_model
+        
+        # Build messages array with optional system prompt
+        messages = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+        messages.append({"role": "user", "content": request.prompt})
+        
         params = {
             "model": model,
-            "messages": [{"role": "user", "content": request.prompt}],
+            "messages": messages,
         }
         
         # GPT-5 models REQUIRE max_completion_tokens (max_tokens is not supported)

@@ -1,6 +1,6 @@
 import re
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,13 @@ class QueryValidator:
     ]
 
     @classmethod
-    def validate(cls, query: str) -> str:
+    async def validate(
+        cls, 
+        query: str,
+        user_id: Optional[str] = None,
+        user_display_name: Optional[str] = None,
+        social_credit_manager=None
+    ) -> str:
         """
         Validate and sanitize a user query.
 
@@ -64,14 +70,26 @@ class QueryValidator:
                     f"Potential prompt injection detected: {query[:100]}... "
                     f"(matched pattern: {pattern})"
                 )
-                # Option 1: Reject the query
-                raise ValueError(
-                    "Query contains suspicious content. "
-                    "Please rephrase your question."
-                )
-
-                # Option 2: Sanitize by removing the pattern
-                # query = re.sub(pattern, '', query, flags=re.IGNORECASE)
+                
+                # Apply penalty if social credit manager is available
+                if user_id and social_credit_manager:
+                    try:
+                        new_score = await social_credit_manager.apply_penalty(
+                            user_id,
+                            "query_filter_violation",
+                            user_display_name
+                        )
+                        error_msg = (
+                            f"Query contains prohibited content. "
+                            f"-150 SOCIAL CREDIT. New score: {new_score}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to apply penalty: {e}", exc_info=True)
+                        error_msg = "Query contains prohibited content. Please rephrase your question."
+                else:
+                    error_msg = "Query contains prohibited content. Please rephrase your question."
+                
+                raise ValueError(error_msg)
 
         # Basic sanitization - remove excessive whitespace
         query = re.sub(r'\s+', ' ', query)
@@ -82,7 +100,13 @@ class QueryValidator:
         return query
 
     @classmethod
-    def is_safe(cls, query: str) -> bool:
+    async def is_safe(
+        cls, 
+        query: str,
+        user_id: Optional[str] = None,
+        user_display_name: Optional[str] = None,
+        social_credit_manager=None
+    ) -> bool:
         """
         Check if query is safe without raising exceptions.
 
@@ -90,7 +114,7 @@ class QueryValidator:
             True if safe, False otherwise
         """
         try:
-            cls.validate(query)
+            await cls.validate(query, user_id, user_display_name, social_credit_manager)
             return True
         except ValueError:
             return False

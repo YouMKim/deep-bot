@@ -108,6 +108,11 @@ class DeepBot(commands.Bot):
             logger.info("Loaded chatbot cog")
         except Exception as e:
             logger.error(f"Failed to load chatbot cog: {e}")
+        try:
+            await self.load_extension("bot.cogs.social_credit_commands")
+            logger.info("Loaded social credit commands cog")
+        except Exception as e:
+            logger.error(f"Failed to load social credit commands cog: {e}")
 
 
 async def main():
