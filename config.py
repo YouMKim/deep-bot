@@ -77,7 +77,7 @@ class Config:
     RAG_USE_MULTI_QUERY: bool = os.getenv("RAG_USE_MULTI_QUERY", "True").lower() == "true"
     RAG_USE_HYDE: bool = os.getenv("RAG_USE_HYDE", "True").lower() == "true"
     RAG_USE_RERANKING: bool = os.getenv("RAG_USE_RERANKING", "True").lower() == "true"
-    RAG_MAX_OUTPUT_TOKENS: int = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "1000"))
+    RAG_MAX_OUTPUT_TOKENS: int = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "2000"))  # Increased: can split into multiple embeds
 
     # Chatbot Configuration
     CHATBOT_CHANNEL_ID: int = int(os.getenv("CHATBOT_CHANNEL_ID", "0"))
@@ -85,7 +85,7 @@ class Config:
     CHATBOT_SESSION_TIMEOUT: int = int(os.getenv("CHATBOT_SESSION_TIMEOUT", "1800"))  # 30 minutes
     CHATBOT_MAX_TOKENS: int = int(os.getenv("CHATBOT_MAX_TOKENS", "400"))  # Default/fallback
     CHATBOT_CHAT_MAX_TOKENS: int = int(os.getenv("CHATBOT_CHAT_MAX_TOKENS", "250"))  # Conversational chat
-    CHATBOT_RAG_MAX_TOKENS: int = int(os.getenv("CHATBOT_RAG_MAX_TOKENS", "500"))  # RAG responses (≈2000 chars, Discord limit)
+    CHATBOT_RAG_MAX_TOKENS: int = int(os.getenv("CHATBOT_RAG_MAX_TOKENS", "1500"))  # RAG responses (can split if needed)
     CHATBOT_TEMPERATURE: float = float(os.getenv("CHATBOT_TEMPERATURE", "0.8"))
     CHATBOT_USE_RAG: bool = os.getenv("CHATBOT_USE_RAG", "True").lower() == "true"
     CHATBOT_RAG_THRESHOLD: float = float(os.getenv("CHATBOT_RAG_THRESHOLD", "0.01"))
