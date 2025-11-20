@@ -48,6 +48,71 @@ class RAG(commands.Cog):
         config_dict.update(overrides)
         return RAGConfig(**config_dict)
 
+    def _split_text_at_sentence_boundary(self, text: str, max_length: int) -> List[str]:
+        """
+        Split text into chunks at sentence boundaries, respecting max_length.
+        
+        Args:
+            text: Text to split
+            max_length: Maximum length per chunk
+            
+        Returns:
+            List of text chunks
+        """
+        import re
+        chunks = []
+        current_chunk = ""
+        
+        # Split on sentence endings (period, exclamation, question mark followed by space/newline)
+        sentences = re.split(r'([.!?][\s\n]+)', text)
+        
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i] if i < len(sentences) else ""
+            punctuation = sentences[i + 1] if i + 1 < len(sentences) else ""
+            full_sentence = sentence + punctuation
+            
+            if not full_sentence.strip():
+                continue
+            
+            # If adding this sentence would exceed limit, save current chunk and start new one
+            if current_chunk and len(current_chunk) + len(full_sentence) > max_length:
+                chunks.append(current_chunk.strip())
+                current_chunk = full_sentence
+            else:
+                current_chunk += full_sentence
+        
+        # Add remaining chunk
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        return chunks
+    
+    async def _send_split_embeds(self, ctx, title: str, content: str, footer_text: str, max_length: int):
+        """
+        Send content split across multiple embeds if it exceeds Discord's limits.
+        
+        Args:
+            ctx: Command context
+            title: Embed title
+            content: Content to send
+            footer_text: Footer text for embeds
+            max_length: Maximum description length per embed
+        """
+        chunks = self._split_text_at_sentence_boundary(content, max_length)
+        total_chunks = len(chunks)
+        
+        for i, chunk in enumerate(chunks, 1):
+            chunk_title = title if i == 1 else f"{title} (Part {i}/{total_chunks})"
+            embed = discord.Embed(
+                title=chunk_title,
+                description=chunk,
+                color=discord.Color.blue()
+            )
+            # Only add footer to last chunk
+            if i == total_chunks:
+                embed.set_footer(text=footer_text)
+            await ctx.send(embed=embed)
+    
     def _parse_strategy_from_question(self, question: str) -> tuple[Optional[str], str]:
         """
         Parse optional strategy from question string.
@@ -112,7 +177,12 @@ class RAG(commands.Cog):
         
         # Validate cleaned question
         try:
-            cleaned_question = QueryValidator.validate(cleaned_question)
+            cleaned_question = await QueryValidator.validate(
+                cleaned_question,
+                user_id=str(ctx.author.id),
+                user_display_name=ctx.author.display_name,
+                social_credit_manager=getattr(self.pipeline.ai_service, 'social_credit_manager', None)
+            )
         except ValueError as e:
             await ctx.send(f"❌ {str(e)}")
             return
@@ -168,21 +238,33 @@ class RAG(commands.Cog):
             if title_parts:
                 title = f"💡 Answer ({', '.join(title_parts)})"
             
-            embed = discord.Embed(
-                title=title,
-                description=result.answer,
-                color=discord.Color.blue()
-            )
-            
-            # Show how many sources were used
+            # Split answer into multiple embeds if too long (Discord embed description limit is 4096 characters)
+            answer_text = result.answer
+            max_description_length = 4090  # Leave some buffer
             sources_count = len(result.sources) if result.sources else 0
-            embed.set_footer(
-                text=f"Model: {result.model} | Cost: ${result.cost:.4f} | {sources_count} sources"
-            )
+            footer_text = f"Model: {result.model} | Cost: ${result.cost:.4f} | {sources_count} sources"
             
-            message = await ctx.send(embed=embed)
-            
-            await message.add_reaction("📚")
+            if len(answer_text) <= max_description_length:
+                # Single embed
+                embed = discord.Embed(
+                    title=title,
+                    description=answer_text,
+                    color=discord.Color.blue()
+                )
+                embed.set_footer(text=footer_text)
+                message = await ctx.send(embed=embed)
+                await message.add_reaction("📚")
+            else:
+                # Split into multiple embeds
+                await self._send_split_embeds(ctx, title, answer_text, footer_text, max_description_length)
+                # Get the last message sent by the bot for reaction
+                message = None
+                async for msg in ctx.channel.history(limit=10):
+                    if msg.author == ctx.bot.user and msg.embeds:
+                        message = msg
+                        break
+                if message:
+                    await message.add_reaction("📚")
             
             self.bot._rag_cache = getattr(self.bot, '_rag_cache', {})
             self.bot._rag_cache[message.id] = result

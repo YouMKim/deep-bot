@@ -732,18 +732,23 @@ class Chatbot(commands.Cog):
             Summarized or original content
         """
         # Different thresholds for chat vs RAG
-        # RAG: Only summarize if exceeds Discord's 2000 char limit
-        # Chat: Summarize at 800 chars to keep it conversational
+        # RAG: Only summarize if exceeds Discord's embed limit (4096 chars) - allow splitting instead
+        # Chat: Summarize at 2000 chars to keep it conversational (can split if needed)
         DISCORD_CHAR_LIMIT = 2000
-        threshold = DISCORD_CHAR_LIMIT if is_rag else 800
+        DISCORD_EMBED_LIMIT = 4096
+        # Only summarize if content is significantly longer than what we can send
+        # For RAG: summarize if > 5000 chars (allows splitting up to ~4096 per embed)
+        # For Chat: summarize if > 3000 chars (allows splitting up to 2000 per message)
+        threshold = 5000 if is_rag else 3000
         if len(content) <= threshold:
             return content
         
         try:
             # Create a summarization prompt
             context_type = "RAG answer" if is_rag else "response"
-            max_summary_tokens = 300 if is_rag else 200
-            content_preview_length = 2000 if is_rag else 1500
+            # Increased token limits for better summaries
+            max_summary_tokens = 500 if is_rag else 400
+            content_preview_length = 4000 if is_rag else 2500
             
             summarize_prompt = f"""The user asked: "{original_message[:200]}"
 
