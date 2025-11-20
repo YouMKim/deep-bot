@@ -108,37 +108,57 @@ class Basic(commands.Cog):
     @commands.command(name="mystats", help="View your AI usage stats and social credit")
     async def mystats(self, ctx):
         user_name = ctx.author.display_name
-        stats = self.ai_tracker.get_user_stats(user_name)
+        user_id = str(ctx.author.id)
         
-        if not stats:
-            await ctx.send("No Clanker usage recorded yet!")
-            return
+        # Get AI usage stats
+        usage_stats = self.ai_tracker.get_user_stats(user_name)
+        
+        from config import Config
+        social_credit_score = None
+        if Config.SOCIAL_CREDIT_ENABLED:
+            from ai.social_credit import SocialCreditManager
+            sc_manager = SocialCreditManager()
+            sc_stats = await sc_manager.get_user_stats(user_id)
+            if sc_stats:
+                social_credit_score = sc_stats['social_credit_score']
+            else:
+                # Initialize if doesn't exist
+                social_credit_score = await sc_manager.get_or_initialize_score(user_id, user_name)
         
         embed = discord.Embed(
             title=f"📊 Clanker Stats for {user_name}",
             color=discord.Color.green()
         )
         
-        # Social Credit
-        embed.add_field(
-            name="Social Credit Scores",
-            value=f"{stats['lifetime_credit']:.1f} points",
-            inline=True
-        )
+        # Social Credit (new behavior-based system)
+        if social_credit_score is not None:
+            embed.add_field(
+                name="Social Credit Score",
+                value=f"{social_credit_score}",
+                inline=True
+            )
         
-        # Lifetime Spending
-        embed.add_field(
-            name="Money Wasted So Far",
-            value=f"${stats['lifetime_cost']:.6f}",
-            inline=True
-        )
-        
-        # Lifetime Tokens
-        embed.add_field(
-            name="Tokens Used So Far",
-            value=f"{stats['lifetime_tokens']:,}",
-            inline=True
-        )
+        # AI Usage Stats (if available)
+        if usage_stats:
+            # Lifetime Spending
+            embed.add_field(
+                name="Money Wasted So Far",
+                value=f"${usage_stats['lifetime_cost']:.6f}",
+                inline=True
+            )
+            
+            # Lifetime Tokens
+            embed.add_field(
+                name="Tokens Used So Far",
+                value=f"{usage_stats['lifetime_tokens']:,}",
+                inline=True
+            )
+        else:
+            embed.add_field(
+                name="AI Usage",
+                value="No usage recorded yet",
+                inline=False
+            )
         
         await ctx.send(embed=embed)
     
@@ -191,6 +211,17 @@ class Basic(commands.Cog):
                 embed.add_field(
                     name=cog_name,
                     value=value,
+                    inline=False
+                )
+        
+        # Add socialcredit command manually (it's filtered out as owner-only but should be visible)
+        socialcredit_cmd = self.bot.get_command('socialcredit')
+        if socialcredit_cmd:
+            # Check if Social Credit category already exists, if not create it
+            if 'Social Credit' not in [field.name for field in embed.fields]:
+                embed.add_field(
+                    name="Social Credit",
+                    value=f"`{self.bot.command_prefix}socialcredit` - View or manage social credit scores",
                     inline=False
                 )
         

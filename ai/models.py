@@ -74,6 +74,7 @@ class AIRequest:
     max_tokens: Optional[int] = None
     temperature: Optional[float] = None
     provider: Optional[str] = None 
+    system_prompt: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
     def validate_request(self):

@@ -47,6 +47,10 @@ class AnthropicProvider(BaseAIProvider):
             "messages": [{"role": "user", "content": request.prompt}],
         }
         
+        # Add system prompt if provided
+        if request.system_prompt:
+            params["system"] = request.system_prompt
+        
         if request.max_tokens:
             params["max_tokens"] = request.max_tokens
         

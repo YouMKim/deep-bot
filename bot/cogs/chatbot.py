@@ -14,6 +14,7 @@ from collections import OrderedDict
 from config import Config
 from ai.service import AIService
 from ai.tracker import UserAITracker
+from ai.social_credit import SocialCreditManager
 from rag.pipeline import RAGPipeline
 from bot.utils.session_manager import SessionManager
 from bot.utils.rate_limiter import RateLimiter
@@ -40,8 +41,16 @@ class Chatbot(commands.Cog):
             window_seconds=self.config.CHATBOT_RATE_LIMIT_WINDOW
         )
         
-        self.ai_service = AIService(provider_name=self.config.AI_DEFAULT_PROVIDER)
-        self.rag_pipeline = RAGPipeline(config=self.config)
+        # Initialize social credit manager if enabled
+        self.social_credit_manager = None
+        if self.config.SOCIAL_CREDIT_ENABLED:
+            self.social_credit_manager = SocialCreditManager()
+        
+        self.ai_service = AIService(
+            provider_name=self.config.AI_DEFAULT_PROVIDER,
+            social_credit_manager=self.social_credit_manager
+        )
+        self.rag_pipeline = RAGPipeline(config=self.config, ai_service=self.ai_service)
         self.ai_tracker = UserAITracker()
         
         # Channel context cache: {channel_id: (context, timestamp)} with LRU eviction
@@ -242,7 +251,8 @@ class Chatbot(commands.Cog):
                     response = await self._generate_chat_response(
                         sanitized_content,
                         channel_id,
-                        message.author.display_name
+                        message.author.display_name,
+                        str(message.author.id)
                     )
                 
                 # Update session history BEFORE sending (for consistency)
@@ -547,14 +557,19 @@ class Chatbot(commands.Cog):
             )
             
             # Get answer from RAG pipeline
-            result = await self.rag_pipeline.answer_question(question, config)
+            result = await self.rag_pipeline.answer_question(
+                question, 
+                config,
+                user_id=str(user_id) if user_id else None,
+                user_display_name=None  # Could extract from message if needed
+            )
             
             # Summarize RAG response only if it exceeds Discord's 2000 char limit
             content = result.answer
             DISCORD_CHAR_LIMIT = 2000
             if len(content) > DISCORD_CHAR_LIMIT:
                 logger.info(f"RAG response ({len(content)} chars) exceeds Discord limit ({DISCORD_CHAR_LIMIT}), summarizing...")
-                content = await self._summarize_if_needed(content, question, is_rag=True)
+                content = await self._summarize_if_needed(content, question, is_rag=True, user_id=str(user_id) if user_id else None)
             
             return {
                 'content': content,
@@ -570,7 +585,8 @@ class Chatbot(commands.Cog):
             fallback_response = await self._generate_chat_response(
                 question,
                 channel_id,
-                "User"  # Default author name for fallback
+                "User",  # Default author name for fallback
+                str(user_id) if user_id else None
             )
             # Prepend warning to inform user
             fallback_response['content'] = (
@@ -637,7 +653,8 @@ class Chatbot(commands.Cog):
         self,
         message: str,
         channel_id: int,
-        author_name: str
+        author_name: str,
+        user_id: Optional[str] = None
     ) -> dict:
         """
         Generate conversational response using chat history.
@@ -670,7 +687,10 @@ class Chatbot(commands.Cog):
             result = await self.ai_service.generate(
                 prompt=prompt,
                 max_tokens=self.config.CHATBOT_CHAT_MAX_TOKENS,
-                temperature=self.config.CHATBOT_TEMPERATURE
+                temperature=self.config.CHATBOT_TEMPERATURE,
+                user_id=user_id,
+                user_display_name=author_name,
+                system_prompt=self.config.CHATBOT_SYSTEM_PROMPT
             )
             
             # If response is long, try to summarize it for more conversational feel
@@ -679,7 +699,7 @@ class Chatbot(commands.Cog):
                 logger.warning(f"AI service returned empty content for channel {channel_id}")
             
             if len(content) > 800:  # If response is longer than ~800 chars (≈200 tokens)
-                content = await self._summarize_if_needed(content, message, is_rag=False)
+                content = await self._summarize_if_needed(content, message, is_rag=False, user_id=user_id)
             
             result['content'] = content
             return {
@@ -699,7 +719,7 @@ class Chatbot(commands.Cog):
                 'mode': 'chat'
             }
     
-    async def _summarize_if_needed(self, content: str, original_message: str, is_rag: bool = False) -> str:
+    async def _summarize_if_needed(self, content: str, original_message: str, is_rag: bool = False, user_id: Optional[str] = None) -> str:
         """
         Summarize long responses to keep them conversational.
         
@@ -737,7 +757,8 @@ Provide a concise, conversational summary:"""
             summary_result = await self.ai_service.generate(
                 prompt=summarize_prompt,
                 max_tokens=max_summary_tokens,
-                temperature=0.7  # Lower temperature for more focused summary
+                temperature=0.7,  # Lower temperature for more focused summary
+                user_id=user_id  # Pass user_id for tone injection
             )
             
             summary = summary_result.get('content', '').strip()

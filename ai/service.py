@@ -1,6 +1,8 @@
 import logging
+from typing import Optional
 from .models import AIConfig, AIRequest
 from .providers import create_provider
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -20,16 +22,18 @@ class AIService:
         },
     }
 
-    def __init__(self, provider_name: str = "openai"):
+    def __init__(self, provider_name: str = "openai", social_credit_manager=None):
         """
         Initialize AI service with a specific provider.
         
         Args:
             provider_name: Either "openai", "anthropic", or "gemini"
+            social_credit_manager: Optional SocialCreditManager instance for tone injection
         """
         config = AIConfig(model_name=provider_name)
         self.provider = create_provider(config)
         self.provider_name = provider_name
+        self.social_credit_manager = social_credit_manager
 
     async def summarize_with_style(self, text: str, style: str = "generic") -> dict:
         """
@@ -125,7 +129,15 @@ class AIService:
             else:
                 return max(0.0, min(2.0, temperature))
     
-    async def generate(self, prompt: str, max_tokens: int = 200, temperature: float = 0.7) -> dict:
+    async def generate(
+        self, 
+        prompt: str, 
+        max_tokens: int = 200, 
+        temperature: float = 0.7,
+        user_id: Optional[str] = None,
+        user_display_name: Optional[str] = None,
+        system_prompt: Optional[str] = None
+    ) -> dict:
         """
         Generate a response for any prompt (generic AI completion).
         
@@ -139,6 +151,9 @@ class AIService:
                        - OpenAI: 0-2 range (0.7 → normalized to 1.4 = 70% creativity)
                        - Values >1 are assumed to be in OpenAI scale
                        - Automatically normalized and clamped per provider
+            user_id: Optional Discord user ID for social credit tone injection
+            user_display_name: Optional display name for social credit initialization
+            system_prompt: Optional base system prompt (tone will be prepended if social credit enabled)
             
         Returns:
             Dictionary with response results and metadata
@@ -146,10 +161,44 @@ class AIService:
         # Normalize and clamp temperature to provider-specific limits
         normalized_temperature = self._clamp_temperature(temperature)
         
+        # Handle social credit tone injection
+        # Optimize: Get score and apply decay in parallel (decay doesn't affect current response)
+        tone_system_prompt = None
+        if Config.SOCIAL_CREDIT_ENABLED and user_id and self.social_credit_manager:
+            try:
+                # Get or initialize user's score (needed for tone)
+                score = await self.social_credit_manager.get_or_initialize_score(
+                    user_id, 
+                    user_display_name or "Unknown"
+                )
+                
+                # Determine tone tier and get tone-specific system prompt
+                from .modifiers import get_tone_prompt
+                tone_system_prompt = get_tone_prompt(score)
+                
+                # Apply usage decay/growth in background (fire and forget - doesn't affect current response)
+                # This allows the AI call to proceed without waiting for DB write
+                import asyncio
+                asyncio.create_task(self.social_credit_manager.decay_score_on_usage(user_id))
+            except Exception as e:
+                logger.warning(f"Failed to apply social credit tone injection: {e}", exc_info=True)
+                # Continue without tone injection if it fails
+        
+        # Combine system prompts
+        # If tone injection is active, use ONLY the tone prompt (it should override base behavior)
+        # Otherwise, use the base system prompt
+        final_system_prompt = None
+        if tone_system_prompt:
+            # Tone prompt replaces base prompt entirely to avoid conflicts
+            final_system_prompt = tone_system_prompt
+        elif system_prompt:
+            final_system_prompt = system_prompt
+        
         request = AIRequest(
             prompt=prompt,
             max_tokens=max_tokens,
-            temperature=normalized_temperature
+            temperature=normalized_temperature,
+            system_prompt=final_system_prompt
         )
         
         response = await self.provider.complete(request)

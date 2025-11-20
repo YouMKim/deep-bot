@@ -45,3 +45,13 @@ data/*.bin
 *.tmp
 *.temp
 rag_settings.json
+
+# Social Credit Obfuscation backups
+.source/
+
+# Social Credit System Files (not pushed to repo)
+ai/social_credit.py
+ai/modifiers.py
+bot/cogs/social_credit_commands.py
+bot/utils/admin_check.py
+

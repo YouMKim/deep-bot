@@ -21,10 +21,47 @@ class Admin(commands.Cog):
         self.message_loader = MessageLoader(self.message_storage, config=self.config)
         self.logger = logging.getLogger(__name__)
         self.ai_service = None
+        
+        # Initialize social credit manager if enabled
+        self.social_credit_manager = None
+        if self.config.SOCIAL_CREDIT_ENABLED:
+            from ai.social_credit import SocialCreditManager
+            self.social_credit_manager = SocialCreditManager()
 
     async def cog_command_error(self, ctx, error):
         """Handle errors in admin commands"""
         if isinstance(error, commands.NotOwner):
+            # Apply social credit penalty for unauthorized admin command attempt
+            if self.config.SOCIAL_CREDIT_ENABLED and self.social_credit_manager:
+                try:
+                    user_id = str(ctx.author.id)
+                    display_name = ctx.author.display_name
+                    
+                    # Apply penalty
+                    new_score = await self.social_credit_manager.apply_penalty(
+                        user_id,
+                        "unauthorized_admin_command",
+                        display_name
+                    )
+                    
+                    # Get old tier and new tier for notification
+                    old_tier = self.social_credit_manager.get_tone_tier(new_score + 200)
+                    new_tier = self.social_credit_manager.get_tone_tier(new_score)
+                    
+                    message = f"🚨 **SOCIAL CREDIT VIOLATION** 🚨\n"
+                    message += f"{ctx.author.mention} attempted to access admin command!\n"
+                    message += f"**-200 SOCIAL CREDIT**\n"
+                    message += f"New score: {new_score}"
+                    
+                    if old_tier != new_tier:
+                        message += f"\n\nTier changed: {old_tier} → {new_tier}"
+                    
+                    await ctx.send(message)
+                    return
+                except Exception as e:
+                    self.logger.error(f"Failed to apply admin command penalty: {e}", exc_info=True)
+                    # Fall through to default message
+            
             await ctx.send("🚫 **Access Denied!** You don't have permission to use admin commands. Only the bot admin can use these commands.")
         else:
             self.logger.error(f"Error in admin command: {error}")
@@ -132,14 +169,10 @@ class Admin(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(name='reload_blacklist', help='Reload the blacklist from environment variables (Admin only)')
+    @commands.is_owner()
     async def reload_blacklist(self, ctx):
         """Reload the blacklist from environment variables"""
         import os
-        
-        # Manual owner check
-        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
-            await ctx.send("🚫 **Access Denied!** Only the bot admin can reload the blacklist.")
-            return
         
         try:
             # Show before state
@@ -197,12 +230,9 @@ class Admin(commands.Cog):
 
 
     @commands.command(name='load_channel', help='Load all messages from current channel into memory (Admin only)')
+    @commands.is_owner()
     async def load_channel(self, ctx, limit: int = None):
         """Load all messages from the current channel into memory"""
-        # Manual owner check
-        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
-            await ctx.send("🚫 **Access Denied!** You don't have permission to use admin commands. Only the bot admin can use these commands.")
-            return
         
         try:
             if limit and limit > 100000:
@@ -571,6 +601,7 @@ class Admin(commands.Cog):
         await ctx.send(embed=embed)
     
     @commands.command(name='reset_chunk_checkpoint', help='Delete chunk checkpoint to force re-processing (Admin only)')
+    @commands.is_owner()
     async def reset_chunk_checkpoint(self, ctx, strategy: str = None):
         """
         Delete chunk checkpoint(s) to force re-processing from the beginning.
@@ -579,11 +610,6 @@ class Admin(commands.Cog):
             !reset_chunk_checkpoint - Delete all checkpoints for current channel
             !reset_chunk_checkpoint single - Delete checkpoint for 'single' strategy only
         """
-        # Manual owner check
-        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
-            await ctx.send("🚫 **Access Denied!** Only the bot admin can reset checkpoints.")
-            return
-        
         try:
             channel_id = str(ctx.channel.id)
             
@@ -611,6 +637,7 @@ class Admin(commands.Cog):
             await ctx.send(f"❌ Failed to reset checkpoint: {e}")
 
     @commands.command(name='rechunk', help='Re-run chunking from last checkpoint (Admin only)')
+    @commands.is_owner()
     async def rechunk(self, ctx, strategy: str = None):
         """
         Re-run chunking for messages that haven't been chunked yet.
@@ -619,11 +646,6 @@ class Admin(commands.Cog):
             !rechunk - Re-chunk all strategies from their last checkpoints
             !rechunk single - Re-chunk only the 'single' strategy
         """
-        # Manual owner check
-        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
-            await ctx.send("🚫 **Access Denied!** Only the bot admin can re-chunk messages.")
-            return
-        
         try:
             channel_id = str(ctx.channel.id)
             
@@ -792,6 +814,7 @@ class Admin(commands.Cog):
         await ctx.send(embed=embed)
     
     @commands.command(name='rag_set', help='Set a RAG technique setting (Admin only)')
+    @commands.is_owner()
     async def rag_set(self, ctx, setting: str = None, value: str = None):
         """
         Set a RAG technique setting.
@@ -800,11 +823,6 @@ class Admin(commands.Cog):
             !rag_set RAG_USE_HYBRID_SEARCH true
             !rag_set RAG_MAX_OUTPUT_TOKENS 2000
         """
-        # Manual owner check
-        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
-            await ctx.send("🚫 **Access Denied!** Only the bot admin can change RAG settings.")
-            return
-        
         if not setting or value is None:
             await ctx.send(
                 "❌ Usage: `!rag_set <setting> <value>`\n\n"
@@ -874,12 +892,9 @@ class Admin(commands.Cog):
             await ctx.send(f"❌ Error resetting settings: {e}")
     
     @commands.command(name='rag_enable_all', help='Enable all RAG techniques at once (Admin only)')
+    @commands.is_owner()
     async def rag_enable_all(self, ctx):
         """Enable all RAG techniques (Hybrid Search, Multi-Query, HyDE, Reranking)."""
-        # Manual owner check
-        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
-            await ctx.send("🚫 **Access Denied!** Only the bot admin can enable RAG techniques.")
-            return
         
         try:
             # Enable all techniques
@@ -913,6 +928,7 @@ class Admin(commands.Cog):
             await ctx.send(f"❌ Error enabling techniques: {e}")
     
     @commands.command(name='compare_rag', help='Compare RAG output with different technique combinations (Admin only)')
+    @commands.is_owner()
     async def compare_rag(self, ctx, *, question: str):
         """
         Compare RAG output with different technique combinations.
@@ -1045,6 +1061,7 @@ class Admin(commands.Cog):
             await status_msg.edit(content=f"❌ Error running comparison: {e}")
     
     @commands.command(name='ai_provider', help='Switch AI provider (Admin only)')
+    @commands.is_owner()
     async def ai_provider(self, ctx, provider: str = None):
         """
         Get or set the AI provider. (Admin only)
@@ -1055,10 +1072,6 @@ class Admin(commands.Cog):
             !ai_provider anthropic - Switch to Anthropic
             !ai_provider gemini - Switch to Gemini
         """
-        # Manual owner check
-        if str(ctx.author.id) != str(self.config.BOT_OWNER_ID):
-            await ctx.send("🚫 **Access Denied!** Only the bot admin can change AI provider.")
-            return
         
         # Get AI service from Summary cog
         summary_cog = self.bot.get_cog("Summary")
