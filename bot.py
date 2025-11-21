@@ -17,10 +17,20 @@ from discord.ext.commands import (
 from config import Config
 
 # Set up logging
+# In Railway/Docker, file logging may not persist, so we primarily use stdout
+# Railway captures stdout/stderr automatically
+log_handlers = [logging.StreamHandler(sys.stdout)]
+try:
+    # Try to add file handler, but don't fail if it doesn't work (e.g., in containers)
+    log_handlers.append(logging.FileHandler("bot.log"))
+except (PermissionError, OSError):
+    # File logging not available (e.g., read-only filesystem in some containers)
+    pass
+
 logging.basicConfig(
     level=getattr(logging, Config.LOG_LEVEL),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("bot.log"), logging.StreamHandler(sys.stdout)],
+    handlers=log_handlers,
 )
 logger = logging.getLogger(__name__)
 
