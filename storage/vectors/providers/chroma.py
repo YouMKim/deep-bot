@@ -12,17 +12,22 @@ class ChromaVectorStorage(VectorStorage):
 
     def create_collection(self, collection_name: str) -> None:
         try:
-            self.client.get_or_create_collection(collection_name)
+            # Use get_or_create_collection with explicit metadata to avoid issues
+            self.client.get_or_create_collection(
+                name=collection_name,
+                metadata={"created_by": "deep-bot"}
+            )
             self.logger.info(f"Created collection: {collection_name}")
         except Exception as e:
-            self.logger.error(f"Failed to create collection '{collection_name}': {e}")
+            self.logger.error(f"Failed to create collection '{collection_name}': {e}", exc_info=True)
             raise
     
     def get_collection(self, collection_name: str):
         try:
             return self.client.get_collection(collection_name)
-        except Exception:
-
+        except Exception as e:
+            # If collection doesn't exist, create it
+            self.logger.debug(f"Collection '{collection_name}' not found, creating it: {e}")
             return self.client.get_or_create_collection(collection_name)
     
     def get_all_documents(self, collection_name: str) -> List[Dict]:

@@ -21,12 +21,16 @@ class ChromaClient:
         try:
             data_dir = Path("data")
             data_dir.mkdir(exist_ok=True)
-            self._client = chromadb.PersistentClient(path="data/chroma_db")
+            # Initialize ChromaDB client with explicit settings to avoid compatibility issues
+            self._client = chromadb.PersistentClient(
+                path="data/chroma_db",
+                settings=chromadb.Settings(anonymized_telemetry=False)
+            )
             self.logger = logging.getLogger(__name__)
             self.logger.info("ChromaDB client initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Failed to initialize ChromaDB client: {e}")
+            self.logger.error(f"Failed to initialize ChromaDB client: {e}", exc_info=True)
             raise
 
     @property
@@ -42,9 +46,11 @@ class ChromaClient:
 
     def list_collections(self):
         try:
-            return self._client.list_collections()
+            collections = self._client.list_collections()
+            # Convert to list of names to avoid any internal ChromaDB issues
+            return [col.name for col in collections] if collections else []
         except Exception as e:
-            self.logger.error(f"Failed to list collections: {e}")
+            self.logger.error(f"Failed to list collections: {e}", exc_info=True)
             return []
 
     def delete_collection(self, name: str):

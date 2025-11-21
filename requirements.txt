@@ -25,7 +25,7 @@ pytest-asyncio>=0.21.0
 pytest-mock>=3.11.0
 
 #embedding and vector database
-chromadb>=0.4.15
+chromadb==0.4.22
 sentence-transformers>=2.2.2
 
 #chunking and tokenization
