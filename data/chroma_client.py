@@ -48,11 +48,20 @@ class ChromaClient:
                     _ = self._client.list_collections()
                     self.logger.info("ChromaDB client initialized successfully")
                     return  # Success, exit retry loop
-                except (KeyError, AttributeError, Exception) as e:
+                except (KeyError, AttributeError, TypeError, Exception) as e:
                     error_str = str(e).lower()
-                    if "frozenset" in error_str or (isinstance(e, KeyError) and not str(e)):
+                    # Check for various frozenset-related errors:
+                    # 1. KeyError with "frozenset" in message
+                    # 2. KeyError with empty message (frozenset() representation)
+                    # 3. TypeError from frozenset metadata issues
+                    is_frozenset_error = (
+                        "frozenset" in error_str or
+                        (isinstance(e, KeyError) and (not str(e) or str(e) == "frozenset()")) or
+                        (isinstance(e, TypeError) and "frozenset" in error_str)
+                    )
+                    if is_frozenset_error:
                         self.logger.warning(
-                            f"ChromaDB metadata compatibility issue detected ({e}). "
+                            f"ChromaDB metadata compatibility issue detected ({type(e).__name__}: {e}). "
                             "Clearing ChromaDB database and retrying..."
                         )
                         # Close client before deleting
@@ -82,7 +91,12 @@ class ChromaClient:
             except Exception as e:
                 error_str = str(e).lower()
                 # Auto-reset on frozenset errors or KeyError with empty message
-                if ("frozenset" in error_str or (isinstance(e, KeyError) and not str(e))) and chroma_path.exists():
+                is_frozenset_error = (
+                    "frozenset" in error_str or
+                    (isinstance(e, KeyError) and (not str(e) or str(e) == "frozenset()")) or
+                    (isinstance(e, TypeError) and "frozenset" in error_str)
+                )
+                if is_frozenset_error and chroma_path.exists():
                     if attempt < max_retries - 1:
                         self.logger.warning(f"ChromaDB error detected ({e}), resetting database and retrying...")
                         try:
