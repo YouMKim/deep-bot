@@ -50,7 +50,20 @@ class Chatbot(commands.Cog):
             provider_name=self.config.AI_DEFAULT_PROVIDER,
             social_credit_manager=self.social_credit_manager
         )
-        self.rag_pipeline = RAGPipeline(config=self.config, ai_service=self.ai_service)
+        
+        # Initialize RAGPipeline with error handling for ChromaDB issues
+        try:
+            self.rag_pipeline = RAGPipeline(config=self.config, ai_service=self.ai_service)
+        except (KeyError, AttributeError, RuntimeError) as e:
+            if "frozenset" in str(e).lower() or "ChromaDB" in str(e):
+                logger.error(
+                    "ChromaDB compatibility issue detected. Chatbot cog will not work until ChromaDB is reset."
+                )
+                raise RuntimeError(
+                    "ChromaDB initialization failed. Please clear the ChromaDB database."
+                ) from e
+            raise
+        
         self.ai_tracker = UserAITracker()
         
         # Channel context cache: {channel_id: (context, timestamp)} with LRU eviction
