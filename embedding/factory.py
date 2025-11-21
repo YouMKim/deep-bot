@@ -1,7 +1,7 @@
 from typing import Optional, Dict
 from embedding.base import EmbeddingBase
 from embedding.openai import OpenAIEmbedder
-from embedding.sentence_transformer import SentenceTransformerEmbedder
+# Lazy import for SentenceTransformerEmbedder to avoid import errors when not needed
 
 class EmbeddingFactory:
     """
@@ -44,7 +44,16 @@ class EmbeddingFactory:
         if provider == "openai":
             embedder = OpenAIEmbedder(model_name=model_name)
         elif provider == "sentence-transformers":
-            embedder = SentenceTransformerEmbedder(model_name=model_name)
+            # Lazy import to avoid errors when sentence-transformers not installed
+            try:
+                from embedding.sentence_transformer import SentenceTransformerEmbedder
+                embedder = SentenceTransformerEmbedder(model_name=model_name)
+            except ImportError as e:
+                raise ImportError(
+                    f"sentence-transformers is not installed. "
+                    f"Install it with: pip install sentence-transformers tokenizers. "
+                    f"Original error: {e}"
+                )
         else:
             raise ValueError(f"Unsupported embedding provider: {provider}")
         
