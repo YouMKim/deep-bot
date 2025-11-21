@@ -36,10 +36,15 @@ venv.bak/
 *.log
 logs/
 
-#data 
+# Data files (databases, vector stores, etc.)
 data/chroma_db/
-data/*.sqlite3
-data/*.bin
+data/**/*.sqlite3
+data/**/*.sqlite
+data/**/*.db
+data/**/*.bin
+*.db
+*.sqlite3
+*.sqlite
 
 # Temporary files
 *.tmp
