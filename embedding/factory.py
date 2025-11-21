@@ -13,17 +13,26 @@ class EmbeddingFactory:
     _instances: Dict[str, EmbeddingBase] = {}
     
     @staticmethod
-    def create_embedder(provider: str = "sentence-transformers", model_name: str = "all-MiniLM-L6-v2") -> EmbeddingBase:
+    def create_embedder(provider: str = "sentence-transformers", model_name: str = "") -> EmbeddingBase:
         """
         Create or retrieve a cached embedder instance.
         
         Args:
             provider: Embedding provider ("sentence-transformers" or "openai")
-            model_name: Model name/identifier
+            model_name: Model name/identifier (auto-selected if empty)
             
         Returns:
             Cached or newly created EmbeddingBase instance
         """
+        # Auto-select model name if not provided
+        if not model_name:
+            if provider == "sentence-transformers":
+                model_name = "all-MiniLM-L6-v2"
+            elif provider == "openai":
+                model_name = "text-embedding-3-small"
+            else:
+                raise ValueError(f"Unsupported embedding provider: {provider}")
+        
         # Create a cache key from provider and model_name
         cache_key = f"{provider}:{model_name}"
         
