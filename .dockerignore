@@ -39,6 +39,12 @@ data/*.sqlite3
 data/*.bin
 data/raw_messages/
 
+# ML Model caches (will be mounted as volume)
+**/.cache/huggingface/
+**/.cache/torch/
+**/.cache/sentence_transformers/
+.cache/
+
 # Environment files
 .env
 .env.local

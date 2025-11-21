@@ -67,6 +67,10 @@ class Config:
     # Vector Store Configuration
     VECTOR_STORE_PROVIDER: str = os.getenv("VECTOR_STORE_PROVIDER", "chroma")  # chroma, pinecone, etc.
 
+    # Embedding Configuration
+    EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "sentence-transformers")  # "sentence-transformers" or "openai"
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "")  # Auto-selects: "all-MiniLM-L6-v2" for sentence-transformers, "text-embedding-3-small" for OpenAI
+    
     # Embedding batch size (tune based on your embedder)
     EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "100"))  # Process 100 documents at a time
     EMBEDDING_BATCH_DELAY: float = float(os.getenv("EMBEDDING_BATCH_DELAY", "0.1"))  # Seconds to wait between batches (rate limiting)

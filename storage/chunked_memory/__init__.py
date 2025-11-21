@@ -62,7 +62,14 @@ class ChunkedMemoryService:
         from config import Config as ConfigClass
         
         self.vector_store = vector_store or VectorStoreFactory.create()
-        self.embedder = embedder or EmbeddingFactory.create_embedder()
+        # Use config to determine embedding provider and model
+        if embedder is None:
+            model_name = self.config.EMBEDDING_MODEL if self.config.EMBEDDING_MODEL else ""
+            embedder = EmbeddingFactory.create_embedder(
+                provider=self.config.EMBEDDING_PROVIDER,
+                model_name=model_name
+            )
+        self.embedder = embedder
         self.message_storage = message_storage or MessageStorage()
         self.chunking_service = chunking_service or ChunkingService()
         self.config = config or ConfigClass
