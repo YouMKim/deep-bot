@@ -41,7 +41,7 @@ def calculate_fetch_k(
     top_k: int,
     needs_filtering: bool = False,
     needs_reranking: bool = False,
-    fetch_multiplier: int = 3
+    fetch_multiplier: Optional[int] = None
 ) -> int:
     """
     Calculate how many results to fetch from vector store.
@@ -55,11 +55,15 @@ def calculate_fetch_k(
         top_k: Number of results requested
         needs_filtering: Whether author filtering will be applied
         needs_reranking: Whether reranking will be applied
-        fetch_multiplier: Multiplier for fetch size (default: 3)
+        fetch_multiplier: Multiplier for fetch size (default: from Config.RAG_FETCH_MULTIPLIER or 2)
 
     Returns:
         Number of results to fetch
     """
+    if fetch_multiplier is None:
+        from config import Config
+        fetch_multiplier = Config.RAG_FETCH_MULTIPLIER
+    
     if needs_filtering or needs_reranking:
         return top_k * fetch_multiplier
     return top_k

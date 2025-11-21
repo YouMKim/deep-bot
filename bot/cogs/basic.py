@@ -293,32 +293,18 @@ class Basic(commands.Cog):
         Returns:
             System prompt string
         """
-        return """You are a fact-checking assistant. Your task is to evaluate claims by searching the web for relevant information, citing external sources, and providing objective ratings.
+        return """You are a fact-checking assistant. Evaluate claims concisely (aim for 3-5 sentences).
 
-CRITICAL INSTRUCTIONS:
-1. SEARCH THE WEB: Use your web search capabilities to find information about the claim. Look for reputable sources, news articles, academic papers, official statements, etc.
+INSTRUCTIONS:
+1. Search the web for information about the claim. Use reputable sources.
+2. Cite sources with URLs: [Source Name](URL) or include URLs directly.
+3. Provide brief analysis: Is the claim accurate? What does the evidence show?
+4. End with ratings in this exact format:
+   TRUTHFULNESS: [0-100]%
+   EVIDENCE_ALIGNMENT: [0-100]%
+5. List sources as URLs at the end.
 
-2. CITE SOURCES: When making any statement about the claim, you MUST cite specific external sources with URLs. Format citations as: [Source Name](URL) or include URLs directly in your text.
-
-3. EVALUATE OBJECTIVELY: Analyze the claim against the evidence you find. Consider:
-   - Is the claim factually accurate?
-   - Is it supported by reliable sources?
-   - Are there conflicting viewpoints?
-   - What is the strength of the evidence?
-
-4. PROVIDE RATINGS:
-   - Truthfulness Rating (0-100%): How accurate is the claim based on available evidence?
-   - Evidence Alignment (0-100%): How well does the claim align with the evidence you found?
-
-5. FORMAT YOUR RESPONSE:
-   - Start with a brief summary of your findings
-   - Provide your analysis with inline source citations
-   - End with ratings in this exact format:
-     TRUTHFULNESS: [0-100]%
-     EVIDENCE_ALIGNMENT: [0-100]%
-   - List all sources as clickable URLs at the end
-
-Be thorough, objective, and always cite your sources."""
+Be concise, objective, and cite your sources. Keep response under 500 words."""
 
     def _extract_ratings(self, text: str) -> tuple[Optional[int], Optional[int]]:
         """
@@ -344,6 +330,117 @@ Be thorough, objective, and always cite your sources."""
             evidence_alignment = int(evidence_match.group(1))
         
         return truthfulness, evidence_alignment
+
+    def _split_text_at_sentence_boundary(self, text: str, max_length: int) -> list[str]:
+        """
+        Split text into chunks at sentence boundaries, preserving paragraph structure.
+        
+        Preserves:
+        - Paragraph breaks (double newlines \n\n)
+        - Single newlines within paragraphs
+        - Sentence punctuation and spacing
+        
+        Args:
+            text: Text to split
+            max_length: Maximum length per chunk
+            
+        Returns:
+            List of text chunks with preserved formatting
+        """
+        import re
+        chunks = []
+        current_chunk = ""
+        
+        # Split on sentence endings (period, exclamation, question mark followed by space/newline)
+        # This preserves the punctuation and whitespace including paragraph breaks
+        sentences = re.split(r'([.!?][\s\n]+)', text)
+        
+        def preserve_formatting(chunk: str) -> str:
+            """Preserve paragraph breaks while cleaning trailing spaces."""
+            # Remove trailing spaces/tabs but preserve all newlines (including paragraph breaks \n\n)
+            # This keeps paragraph structure intact while cleaning up trailing whitespace
+            return chunk.rstrip(' \t')  # Only strip spaces/tabs, keep newlines
+        
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i] if i < len(sentences) else ""
+            punctuation = sentences[i + 1] if i + 1 < len(sentences) else ""
+            full_sentence = sentence + punctuation
+            
+            if not full_sentence.strip():
+                continue
+            
+            # If adding this sentence would exceed limit, save current chunk and start new one
+            if current_chunk and len(current_chunk) + len(full_sentence) > max_length:
+                # Preserve paragraph structure - keep newlines, remove trailing spaces
+                if chunks:
+                    chunks.append(preserve_formatting(current_chunk))
+                else:
+                    chunks.append(current_chunk.strip())
+                current_chunk = full_sentence.lstrip()  # Remove leading whitespace from new chunk start
+            else:
+                current_chunk += full_sentence
+        
+        # Add remaining chunk - preserve all formatting
+        if current_chunk.strip():
+            if chunks:
+                chunks.append(preserve_formatting(current_chunk))
+            else:
+                chunks.append(current_chunk.strip())
+        
+        return chunks
+
+    def _remove_urls_from_text(self, text: str, urls_to_remove: list[str]) -> str:
+        """
+        Remove URLs from text to avoid duplication (since URLs are shown in separate sources embed).
+        Also cleans up orphaned text like "Source:" or "and" that was around the URLs.
+        
+        Args:
+            text: Text that may contain URLs
+            urls_to_remove: List of URLs to remove from the text
+            
+        Returns:
+            Text with URLs removed and cleaned up
+        """
+        import re
+        cleaned_text = text
+        
+        # Remove markdown links [text](url) where URL matches - remove entire link
+        for url in urls_to_remove:
+            # Escape special regex characters in URL
+            escaped_url = re.escape(url)
+            # Remove markdown links: [anything](url) - remove the whole thing
+            cleaned_text = re.sub(rf'\[([^\]]+)\]\({escaped_url}\)', '', cleaned_text)
+            # Remove plain URLs (with optional trailing punctuation)
+            cleaned_text = re.sub(rf'{escaped_url}[.,;:!?)]*', '', cleaned_text)
+        
+        # Clean up orphaned text patterns that commonly appear around URLs
+        # Remove "Source:" or "Sources:" followed by nothing, dashes, or "and"
+        cleaned_text = re.sub(r'Source[s]?:\s*[-–—]?\s*(and\s*[-–—]?\s*)?', '', cleaned_text, flags=re.IGNORECASE)
+        # Remove orphaned "and" connectors (standalone or after punctuation)
+        cleaned_text = re.sub(r'(^|\n|\.|,|:)\s*and\s*[-–—]?\s*', r'\1 ', cleaned_text, flags=re.IGNORECASE | re.MULTILINE)
+        # Remove standalone dashes, bullets, or separators
+        cleaned_text = re.sub(r'\s*[-–—•]\s*$', '', cleaned_text, flags=re.MULTILINE)
+        cleaned_text = re.sub(r'^\s*[-–—•]\s*', '', cleaned_text, flags=re.MULTILINE)
+        # Remove "Source:" or "Sources:" at end of sentences or lines
+        cleaned_text = re.sub(r'\.\s*Source[s]?:\s*', '. ', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = re.sub(r'Source[s]?:\s*$', '', cleaned_text, flags=re.IGNORECASE | re.MULTILINE)
+        # Remove patterns like "Source: and -" or "Sources: -"
+        cleaned_text = re.sub(r'Source[s]?:\s*and\s*[-–—]', '', cleaned_text, flags=re.IGNORECASE)
+        
+        # Clean up extra whitespace that might result from URL removal
+        # Preserve newlines: only collapse multiple spaces/tabs, not newlines
+        cleaned_text = re.sub(r'[ \t]+', ' ', cleaned_text)  # Multiple spaces/tabs to single space (preserves newlines)
+        cleaned_text = re.sub(r'[ \t]+$', '', cleaned_text, flags=re.MULTILINE)  # Remove trailing spaces
+        cleaned_text = re.sub(r'^[ \t]+', '', cleaned_text, flags=re.MULTILINE)  # Remove leading spaces
+        cleaned_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned_text)  # Multiple newlines to double (preserve paragraph breaks)
+        # Remove lines that are just dashes, bullets, or punctuation
+        cleaned_text = re.sub(r'^\s*[-–—•]\s*$', '', cleaned_text, flags=re.MULTILINE)
+        # Clean up double punctuation
+        cleaned_text = re.sub(r'\.\s*\.', '.', cleaned_text)
+        cleaned_text = re.sub(r',\s*,', ',', cleaned_text)
+        cleaned_text = cleaned_text.strip()
+        
+        return cleaned_text
 
     def _extract_urls(self, text: str) -> list[str]:
         """
@@ -388,6 +485,50 @@ Be thorough, objective, and always cite your sources."""
                 cleaned_urls.append(url)
         
         return cleaned_urls[:10]  # Limit to 10 sources
+
+    async def _summarize_evaluation(self, evaluation_text: str, claim: str, user_id: str) -> str:
+        """
+        Summarize a very long evaluation response to fit within embed limits.
+        
+        Args:
+            evaluation_text: Long evaluation text to summarize
+            claim: Original claim being evaluated
+            user_id: User ID for social credit tone injection
+            
+        Returns:
+            Summarized evaluation text
+        """
+        summarize_prompt = f"""The user asked to evaluate this claim: "{claim[:200]}"
+
+The AI generated this detailed evaluation, but it's too long for Discord. Please create a concise summary that:
+- Preserves the truthfulness and evidence alignment ratings
+- Keeps the most important analysis points
+- Maintains key evidence and sources mentioned
+- Aim for 3-5 sentences covering the essential evaluation
+
+Original evaluation:
+{evaluation_text[:4000]}
+
+Provide a concise summary:"""
+        
+        try:
+            summary_result = await self.evaluate_ai_service.generate(
+                prompt=summarize_prompt,
+                max_tokens=500,  # Enough for a good summary
+                temperature=0.3,  # Lower temperature for more focused summary
+                user_id=user_id,
+                user_display_name=None
+            )
+            
+            summary = summary_result.get('content', '').strip()
+            if summary and len(summary) < len(evaluation_text):
+                return summary
+            else:
+                # If summarization didn't help, return original (will be split)
+                return evaluation_text
+        except Exception as e:
+            self.logger.error(f"Error summarizing evaluation: {e}", exc_info=True)
+            return evaluation_text  # Return original if summarization fails
 
     def _get_rating_color(self, rating: int) -> discord.Color:
         """
@@ -483,8 +624,11 @@ Search the web for relevant information, cite your sources with URLs, and provid
             # Extract ratings
             truthfulness, evidence_alignment = self._extract_ratings(evaluation_text)
             
-            # Extract URLs
-            urls = self._extract_urls(evaluation_text)
+            # Extract URLs (limit to top 3) BEFORE removing them from text
+            urls = self._extract_urls(evaluation_text)[:3]
+            
+            # Remove URLs from evaluation text since they'll be shown in separate sources embed
+            evaluation_text = self._remove_urls_from_text(evaluation_text, urls)
             
             # Determine embed color based on truthfulness (or default to blue)
             if truthfulness is not None:
@@ -492,16 +636,34 @@ Search the web for relevant information, cite your sources with URLs, and provid
             else:
                 embed_color = discord.Color.blue()
             
-            # Create embed
-            embed = discord.Embed(
+            # Prepare claim preview
+            claim_preview = claim[:500] + "..." if len(claim) > 500 else claim
+            
+            # Summarize if analysis is very long (before splitting)
+            SUMMARIZE_THRESHOLD = 6000  # Summarize if > 6000 chars
+            original_length = len(evaluation_text)
+            if original_length > SUMMARIZE_THRESHOLD:
+                try:
+                    evaluation_text = await self._summarize_evaluation(evaluation_text, claim, user_id)
+                    self.logger.info(f"Summarized evaluation from {original_length} to {len(evaluation_text)} chars")
+                except Exception as e:
+                    self.logger.error(f"Failed to summarize evaluation: {e}", exc_info=True)
+                    # Continue with original text if summarization fails
+            
+            # Split analysis text into chunks if needed (max 4000 chars per embed description)
+            max_analysis_per_embed = 4000
+            analysis_chunks = self._split_text_at_sentence_boundary(evaluation_text, max_analysis_per_embed)
+            
+            # Create first embed with claim, ratings, and first part of analysis
+            embeds = []
+            first_embed = discord.Embed(
                 title="🔍 Fact-Check Evaluation",
                 color=embed_color,
                 timestamp=discord.utils.utcnow()
             )
             
-            # Add claim field (truncate if too long)
-            claim_preview = claim[:500] + "..." if len(claim) > 500 else claim
-            embed.add_field(
+            # Add claim field
+            first_embed.add_field(
                 name="Claim",
                 value=f"**{replied_message.author.display_name}**: {claim_preview}",
                 inline=False
@@ -517,13 +679,13 @@ Search the web for relevant information, cite your sources with URLs, and provid
                 else:
                     truthfulness_label += " - Mostly False"
                 
-                embed.add_field(
+                first_embed.add_field(
                     name="Truthfulness",
                     value=truthfulness_label,
                     inline=True
                 )
             else:
-                embed.add_field(
+                first_embed.add_field(
                     name="Truthfulness",
                     value="Rating not found",
                     inline=True
@@ -538,46 +700,84 @@ Search the web for relevant information, cite your sources with URLs, and provid
                 else:
                     evidence_label += " - Weakly Supported"
                 
-                embed.add_field(
+                first_embed.add_field(
                     name="Evidence Alignment",
                     value=evidence_label,
                     inline=True
                 )
             else:
-                embed.add_field(
+                first_embed.add_field(
                     name="Evidence Alignment",
                     value="Rating not found",
                     inline=True
                 )
             
-            # Add analysis (truncate if too long)
-            analysis_text = evaluation_text[:1000] + "..." if len(evaluation_text) > 1000 else evaluation_text
-            embed.add_field(
-                name="Analysis",
-                value=analysis_text,
-                inline=False
-            )
-            
-            # Add sources if found
-            if urls:
-                sources_text = "\n".join([f"• [{url[:50]}...]({url})" if len(url) > 50 else f"• [{url}]({url})" for url in urls[:10]])
-                embed.add_field(
-                    name="Sources",
-                    value=sources_text,
-                    inline=False
-                )
-            else:
-                embed.add_field(
-                    name="Sources",
-                    value="No sources found in response",
-                    inline=False
-                )
+            # Add first chunk of analysis as description (allows up to 4096 chars)
+            if analysis_chunks:
+                analysis_text = analysis_chunks[0]
+                if len(analysis_text) > 4090:  # Leave buffer
+                    analysis_text = analysis_text[:4090].rsplit(' ', 1)[0] + "..."
+                first_embed.description = f"**Analysis:**\n{analysis_text}"
             
             # Add footer with metadata
-            embed.set_footer(text=f"Model: {result['model']} | Cost: ${result['cost']:.6f}")
+            first_embed.set_footer(text=f"Model: {result['model']} | Cost: ${result['cost']:.6f}")
+            embeds.append(first_embed)
             
-            # Update status message with result
-            await status_msg.edit(content=None, embed=embed)
+            # Add additional analysis embeds if needed
+            for i, chunk in enumerate(analysis_chunks[1:], 2):
+                analysis_text = chunk
+                if len(analysis_text) > 4090:  # Leave buffer
+                    analysis_text = analysis_text[:4090].rsplit(' ', 1)[0] + "..."
+                
+                analysis_embed = discord.Embed(
+                    title=f"🔍 Fact-Check Evaluation (Part {i})",
+                    description=f"**Analysis (continued):**\n{analysis_text}",
+                    color=embed_color,
+                    timestamp=discord.utils.utcnow()
+                )
+                analysis_embed.set_footer(text=f"Model: {result['model']} | Cost: ${result['cost']:.6f}")
+                embeds.append(analysis_embed)
+            
+            # Create sources embed (separate embed)
+            if urls:
+                sources_embed = discord.Embed(
+                    title="🔍 Sources",
+                    color=embed_color,
+                    timestamp=discord.utils.utcnow()
+                )
+                
+                sources_text = ""
+                max_sources_length = 1020  # Leave buffer
+                for url in urls:
+                    # Truncate URL display text, but full URL still counts in markdown
+                    if len(url) > 60:
+                        url_display = url[:60] + "..."
+                    else:
+                        url_display = url
+                    
+                    # Calculate actual length: "• [display](full_url)\n"
+                    url_line = f"• [{url_display}]({url})\n"
+                    url_line_length = len(url_line)
+                    
+                    # Check if adding this URL would exceed limit
+                    if len(sources_text) + url_line_length > max_sources_length:
+                        break
+                    sources_text += url_line
+                
+                sources_text = sources_text.rstrip()  # Remove trailing newline
+                if sources_text:
+                    sources_embed.add_field(
+                        name="Sources",
+                        value=sources_text,
+                        inline=False
+                    )
+                    sources_embed.set_footer(text=f"Model: {result['model']} | Cost: ${result['cost']:.6f}")
+                    embeds.append(sources_embed)
+            
+            # Send all embeds
+            await status_msg.edit(content=None, embed=embeds[0])
+            for embed in embeds[1:]:
+                await ctx.send(embed=embed)
             
         except Exception as e:
             import logging

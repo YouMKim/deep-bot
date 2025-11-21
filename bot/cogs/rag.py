@@ -50,21 +50,33 @@ class RAG(commands.Cog):
 
     def _split_text_at_sentence_boundary(self, text: str, max_length: int) -> List[str]:
         """
-        Split text into chunks at sentence boundaries, respecting max_length.
+        Split text into chunks at sentence boundaries, preserving paragraph structure.
+        
+        Preserves:
+        - Paragraph breaks (double newlines \n\n)
+        - Single newlines within paragraphs
+        - Sentence punctuation and spacing
         
         Args:
             text: Text to split
             max_length: Maximum length per chunk
             
         Returns:
-            List of text chunks
+            List of text chunks with preserved formatting
         """
         import re
         chunks = []
         current_chunk = ""
         
         # Split on sentence endings (period, exclamation, question mark followed by space/newline)
+        # This preserves the punctuation and whitespace including paragraph breaks
         sentences = re.split(r'([.!?][\s\n]+)', text)
+        
+        def preserve_formatting(chunk: str) -> str:
+            """Preserve paragraph breaks while cleaning trailing spaces."""
+            # Remove trailing spaces/tabs but preserve all newlines (including paragraph breaks \n\n)
+            # This keeps paragraph structure intact while cleaning up trailing whitespace
+            return chunk.rstrip(' \t')  # Only strip spaces/tabs, keep newlines
         
         for i in range(0, len(sentences), 2):
             sentence = sentences[i] if i < len(sentences) else ""
@@ -76,16 +88,71 @@ class RAG(commands.Cog):
             
             # If adding this sentence would exceed limit, save current chunk and start new one
             if current_chunk and len(current_chunk) + len(full_sentence) > max_length:
-                chunks.append(current_chunk.strip())
-                current_chunk = full_sentence
+                # Preserve paragraph structure - keep newlines, remove trailing spaces
+                if chunks:
+                    chunks.append(preserve_formatting(current_chunk))
+                else:
+                    chunks.append(current_chunk.strip())
+                current_chunk = full_sentence.lstrip()  # Remove leading whitespace from new chunk start
             else:
                 current_chunk += full_sentence
         
-        # Add remaining chunk
+        # Add remaining chunk - preserve all formatting
         if current_chunk.strip():
-            chunks.append(current_chunk.strip())
+            if chunks:
+                chunks.append(preserve_formatting(current_chunk))
+            else:
+                chunks.append(current_chunk.strip())
         
         return chunks
+    
+    async def _summarize_long_response(self, content: str, original_question: str, user_id: str) -> str:
+        """
+        Summarize a very long RAG response to fit within embed limits.
+        
+        Args:
+            content: Long response content to summarize
+            original_question: Original question for context
+            user_id: User ID for social credit tone injection
+            
+        Returns:
+            Summarized content
+        """
+        # Use the pipeline's AI service for summarization
+        ai_service = self.pipeline.ai_service
+        
+        summarize_prompt = f"""The user asked: "{original_question[:200]}"
+
+The AI generated this answer, but it's too long. Please create a concise summary that:
+- Preserves the key information and main points
+- Keeps only the most important details
+- Maintains clarity
+- Aim for 2-3 sentences (under 200 words)
+- Focus on directly answering the question
+
+Original answer:
+{content[:3000]}
+
+Provide a brief, concise summary:"""
+        
+        try:
+            summary_result = await ai_service.generate(
+                prompt=summarize_prompt,
+                max_tokens=300,  # Reduced for more concise summaries
+                temperature=0.3,  # Lower temperature for more focused summary
+                user_id=user_id,
+                user_display_name=None
+            )
+            
+            summary = summary_result.get('content', '').strip()
+            if summary and len(summary) < len(content):
+                return summary
+            else:
+                # If summarization didn't help, return original (will be split)
+                return content
+        except Exception as e:
+            self.logger.error(f"Error summarizing response: {e}", exc_info=True)
+            return content  # Return original if summarization fails
     
     async def _send_split_embeds(self, ctx, title: str, content: str, footer_text: str, max_length: int):
         """
@@ -238,11 +305,25 @@ class RAG(commands.Cog):
             if title_parts:
                 title = f"💡 Answer ({', '.join(title_parts)})"
             
-            # Split answer into multiple embeds if too long (Discord embed description limit is 4096 characters)
+            # Handle long answers: summarize if very long, otherwise split into multiple embeds
             answer_text = result.answer
             max_description_length = 4090  # Leave some buffer
             sources_count = len(result.sources) if result.sources else 0
             footer_text = f"Model: {result.model} | Cost: ${result.cost:.4f} | {sources_count} sources"
+            
+            # Summarization threshold: summarize if answer is longer than a reasonable Discord message
+            SUMMARIZE_THRESHOLD = 3000  # Summarize if > 3000 chars (allows longer responses before summarizing)
+            
+            if len(answer_text) > SUMMARIZE_THRESHOLD:
+                # Summarize long responses to keep them concise
+                self.logger.info(f"Answer ({len(answer_text)} chars) exceeds summarize threshold ({SUMMARIZE_THRESHOLD}), summarizing...")
+                try:
+                    answer_text = await self._summarize_long_response(answer_text, cleaned_question, str(ctx.author.id))
+                    self.logger.info(f"Summarized to {len(answer_text)} chars")
+                except Exception as e:
+                    self.logger.error(f"Failed to summarize response: {e}", exc_info=True)
+                    # Fall back to splitting if summarization fails
+                    pass
             
             if len(answer_text) <= max_description_length:
                 # Single embed

@@ -50,21 +50,34 @@ class AuthorFilter:
         """
         # Check blacklist - use author_id if available (more reliable)
         if exclude_blacklisted:
-            # Try author_id first (Discord user ID)
-            if author_id:
+            # Try author_id first (Discord user ID) - handle empty strings and None
+            if author_id and str(author_id).strip():
                 try:
                     author_id_int = int(author_id)
                     if author_id_int in self.config.BLACKLIST_IDS:
-                        self.logger.debug(f"Filtered out blacklisted author ID: {author_id} ({author})")
+                        self.logger.info(f"Filtered out blacklisted author ID: {author_id} ({author})")
+                        return False
+                except (ValueError, TypeError):
+                    # If author_id is not a valid integer, try string comparison
+                    if str(author_id) in [str(bid) for bid in self.config.BLACKLIST_IDS]:
+                        self.logger.info(f"Filtered out blacklisted author ID (string): {author_id} ({author})")
+                        return False
+            
+            # Fallback: check author name/ID as string (for cases where author_id wasn't available)
+            if author and str(author).strip():
+                # Check if author name matches any blacklist ID (as string)
+                author_str = str(author)
+                if author_str in [str(bid) for bid in self.config.BLACKLIST_IDS]:
+                    self.logger.info(f"Filtered out blacklisted author (name match): {author}")
+                    return False
+                # Also check if author is a numeric string that matches blacklist
+                try:
+                    author_int = int(author_str)
+                    if author_int in self.config.BLACKLIST_IDS:
+                        self.logger.info(f"Filtered out blacklisted author (numeric name): {author}")
                         return False
                 except (ValueError, TypeError):
                     pass
-            
-            # Fallback: check author name/ID as string
-            if author in self.config.BLACKLIST_IDS or \
-               str(author) in [str(bid) for bid in self.config.BLACKLIST_IDS]:
-                self.logger.debug(f"Filtered out blacklisted author: {author}")
-                return False
 
         # Check author whitelist
         if filter_authors:

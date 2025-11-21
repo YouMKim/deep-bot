@@ -176,6 +176,7 @@ class RAGPipeline:
                 top_k=fetch_k,  # Fetch more if reranking
                 bm25_weight=config.bm25_weight,
                 vector_weight=config.vector_weight,
+                exclude_blacklisted=True,  # Explicitly exclude blacklisted authors
                 filter_authors=config.filter_authors,
             )
         else:
@@ -184,6 +185,7 @@ class RAGPipeline:
                 query=search_query,  # Use HyDE-enhanced query if enabled
                 strategy=strategy,
                 top_k=fetch_k,  # Fetch more if reranking
+                exclude_blacklisted=True,  # Explicitly exclude blacklisted authors
                 filter_authors=config.filter_authors,
             )
 
@@ -317,25 +319,25 @@ class RAGPipeline:
         
         return context
 
-    def _create_rag_prompt(self, question: str, context: str) -> str:
+    def _create_rag_prompt(self, question: str, context: str, max_tokens: int = 800) -> str:
         """
         Create prompt for LLM with context and question.
         """
-        system_message = """You are a helpful Discord bot that answers questions based on Discord conversation history.
+        system_message = """You are a helpful Discord bot that answers questions based on Discord conversation history. You're chatting with friends, not writing a report.
 
-        Instructions:
-        - Answer ONLY using information from the provided context
-        - Write in a natural, conversational style like a Discord message
-        - Write as flowing paragraphs, NOT bullet points or lists
-        - If the context doesn't contain enough information, say so naturally
-        - When referencing information, mention the person's name and date naturally in the text (e.g., "Thomas mentioned on 2024-06-11 that...")
-        - Try to also group things mentioned by same person together or same topics together
-        - Do NOT use bullet points, numbered lists, or structured formats
-        - Do NOT make up information not in the context
-        - Write like you're explaining something to a friend in Discord chat
-        - also put the information in chronological order from oldest to newest 
-        - also at the end if ideas connect or are disconnected you can combine them or summarize the results so that it follows more naturally
-        - At the very end clearly state that you are pulling outside information and do a 1-2 setntence evaluation of the discord chat.
+Your goal is to have a natural conversation that answers their question. Think of it like you're catching up with someone and sharing what you remember from past conversations.
+
+Write like you're actually talking:
+- Use natural transitions and flow between ideas
+- Connect related thoughts together smoothly
+- Reference people by name when it makes sense (e.g., "Oh yeah, Thomas mentioned that...")
+- Show how ideas evolved over time if relevant
+- If you're not sure about something, say so casually
+- Keep it conversational - imagine you're explaining this to a friend in voice chat
+
+Only use information from the provided context. Don't make things up. If there's not enough info, just say so naturally like you would in a real conversation.
+
+Write in flowing paragraphs - no bullet points or lists. Just talk naturally about what you found.
         """
 
         # Use list join instead of f-string concatenation for better memory efficiency
@@ -350,7 +352,7 @@ class RAGPipeline:
             "",
             f"Question: {question}",
             "",
-            "Answer (write naturally as a Discord message, no bullet points):"
+            "Answer (have a natural conversation about this):"
         ]
         
         return "\n".join(parts)
@@ -379,20 +381,26 @@ class RAGPipeline:
             strategy = ChunkStrategy.TOKENS
 
         # Retrieve with each query
+        # Use configurable multiplier (default 1.5, reduced from 2.0)
+        multi_query_multiplier = self.config.RAG_MULTI_QUERY_MULTIPLIER
+        fetch_k_multi = int(config.top_k * multi_query_multiplier)
+        
         all_results = []
         for q in queries:
             if config.use_hybrid_search:
                 results = await self.chunked_memory.search_hybrid(
                     query=q,
                     strategy=strategy,
-                    top_k=config.top_k * 2,  # Get more candidates
+                    top_k=fetch_k_multi,  # Get more candidates (configurable multiplier)
+                    exclude_blacklisted=True,  # Explicitly exclude blacklisted authors
                     filter_authors=config.filter_authors
                 )
             else:
                 results = await self.chunked_memory.search(
                     query=q,
                     strategy=strategy,
-                    top_k=config.top_k * 2,
+                    top_k=fetch_k_multi,  # Get more candidates (configurable multiplier)
+                    exclude_blacklisted=True,  # Explicitly exclude blacklisted authors
                     filter_authors=config.filter_authors
                 )
 

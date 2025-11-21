@@ -5,6 +5,7 @@ from ..models import AIConfig
 from .openai import OpenAIProvider
 from .anthropic import AnthropicProvider
 from .gemini import GeminiProvider
+from config import Config
 
 
 def create_provider(config: AIConfig) -> BaseAIProvider:
@@ -24,13 +25,13 @@ def create_provider(config: AIConfig) -> BaseAIProvider:
     
     if config.model_name == "openai":
         api_key = config.open_api_key
-        default_model = "gpt-5-mini-2025-08-07"  # Latest GPT-5 mini snapshot (2025-08-07)
+        default_model = Config.OPENAI_DEFAULT_MODEL
     elif config.model_name == "anthropic":
         api_key = config.anthopic_api_key
-        default_model = "claude-haiku-4-5"  # Latest 2025 model
+        default_model = Config.ANTHROPIC_DEFAULT_MODEL
     elif config.model_name == "gemini":
         api_key = config.gemini_api_key
-        default_model = "gemini-2.5-flash"  # Latest hybrid reasoning model with 1M context
+        default_model = Config.GEMINI_DEFAULT_MODEL
     else:
         raise ValueError(f"Provider configuration not implemented: {config.model_name}")
     
