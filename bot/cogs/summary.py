@@ -26,10 +26,23 @@ class Summary(commands.Cog):
         self.bot = bot
         self.ai_service = AIService(provider_name=ai_provider)
         self.config = Config
-        self.chunked_memory_service = ChunkedMemoryService(config=self.config)
+        self.logger = logging.getLogger(__name__)
+        
+        # Initialize ChunkedMemoryService with error handling for ChromaDB issues
+        try:
+            self.chunked_memory_service = ChunkedMemoryService(config=self.config)
+        except (KeyError, AttributeError) as e:
+            if "frozenset" in str(e).lower():
+                self.logger.error(
+                    "ChromaDB compatibility issue detected. Summary cog will not work until ChromaDB is reset."
+                )
+                raise RuntimeError(
+                    "ChromaDB initialization failed. Please clear the ChromaDB database."
+                ) from e
+            raise
+        
         self.message_storage = MessageStorage()
         self.message_loader = MessageLoader(self.message_storage, config=self.config)
-        self.logger = logging.getLogger(__name__)
 
 
     @commands.command(name="summary", help="Generate a summary of recent messages from local storage")

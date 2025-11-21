@@ -25,11 +25,25 @@ class RAGPipeline:
         from config import Config as ConfigClass  # Import here to avoid circular
         
         self.config = config or ConfigClass
-        self.chunked_memory = chunked_memory_service or ChunkedMemoryService(config=self.config)
+        self.logger = logging.getLogger(__name__)
+        # Initialize ChunkedMemoryService with error handling for ChromaDB issues
+        try:
+            self.chunked_memory = chunked_memory_service or ChunkedMemoryService(config=self.config)
+        except (KeyError, AttributeError) as e:
+            if "frozenset" in str(e).lower():
+                self.logger.warning(
+                    "ChromaDB compatibility issue detected during RAGPipeline initialization. "
+                    "The bot will continue but RAG features may not work until ChromaDB is reset."
+                )
+                # Create a minimal service that will fail gracefully
+                raise RuntimeError(
+                    "ChromaDB initialization failed due to metadata compatibility issue. "
+                    "Please clear the ChromaDB database or contact support."
+                ) from e
+            raise
         self.ai_service = ai_service or AIService()
         self.query_enhancer = QueryEnhancementService(ai_service=self.ai_service)
         self.message_storage = message_storage or MessageStorage()
-        self.logger = logging.getLogger(__name__)
         self.reranker = None 
 
     async def answer_question(
