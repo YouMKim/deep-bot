@@ -115,9 +115,27 @@ class ChromaVectorStorage(VectorStorage):
     
     def list_collections(self) -> List[str]:
         try:
-            return [col.name for col in self.client.list_collections()]
+            collections = self.client.list_collections()
+            # Handle ChromaDB compatibility issues
+            result = []
+            for col in collections:
+                try:
+                    result.append(col.name)
+                except (KeyError, AttributeError) as e:
+                    # Skip collections with metadata issues
+                    self.logger.warning(f"Skipping collection due to metadata issue: {e}")
+                    continue
+            return result
+        except KeyError as e:
+            if "frozenset" in str(e).lower():
+                self.logger.warning(
+                    "ChromaDB KeyError: frozenset() detected. "
+                    "This may indicate corrupted metadata. Returning empty list."
+                )
+                return []
+            raise
         except Exception as e:
-            self.logger.error(f"Failed to list collections: {e}")
+            self.logger.error(f"Failed to list collections: {e}", exc_info=True)
             return []
     
     def delete_collection(self, collection_name: str) -> None:
