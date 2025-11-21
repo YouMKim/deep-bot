@@ -23,9 +23,15 @@ class Config:
 
     # OpenAI Configuration
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_DEFAULT_MODEL: str = os.getenv("OPENAI_DEFAULT_MODEL", "gpt-5-mini-2025-08-07")
+    
+    # Anthropic Configuration
+    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    ANTHROPIC_DEFAULT_MODEL: str = os.getenv("ANTHROPIC_DEFAULT_MODEL", "claude-haiku-4-5")
     
     # Gemini Configuration
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_DEFAULT_MODEL: str = os.getenv("GEMINI_DEFAULT_MODEL", "gemini-2.5-flash")
 
     # Bot Configuration
     BOT_PREFIX: str = os.getenv("BOT_PREFIX", "!")
@@ -66,9 +72,11 @@ class Config:
     EMBEDDING_BATCH_DELAY: float = float(os.getenv("EMBEDDING_BATCH_DELAY", "0.1"))  # Seconds to wait between batches (rate limiting)
 
     #RAG configs 
-    RAG_DEFAULT_TOP_K: int = int(os.getenv("RAG_DEFAULT_TOP_K", "15"))
+    RAG_DEFAULT_TOP_K: int = int(os.getenv("RAG_DEFAULT_TOP_K", "8"))  # Reduced from 15 to reduce context size
     RAG_DEFAULT_SIMILARITY_THRESHOLD: float = float(os.getenv("RAG_DEFAULT_SIMILARITY_THRESHOLD", "0.01"))
     RAG_DEFAULT_MAX_CONTEXT_TOKENS: int = int(os.getenv("RAG_DEFAULT_MAX_CONTEXT_TOKENS", "4000"))
+    RAG_FETCH_MULTIPLIER: int = int(os.getenv("RAG_FETCH_MULTIPLIER", "2"))  # Multiplier for reranking (reduced from 3)
+    RAG_MULTI_QUERY_MULTIPLIER: float = float(os.getenv("RAG_MULTI_QUERY_MULTIPLIER", "1.5"))  # Multiplier for multi-query (reduced from 2)
     RAG_DEFAULT_TEMPERATURE: float = float(os.getenv("RAG_DEFAULT_TEMPERATURE", "0.7"))
     RAG_DEFAULT_STRATEGY: str = os.getenv("RAG_DEFAULT_STRATEGY", "author")
     
@@ -77,7 +85,7 @@ class Config:
     RAG_USE_MULTI_QUERY: bool = os.getenv("RAG_USE_MULTI_QUERY", "True").lower() == "true"
     RAG_USE_HYDE: bool = os.getenv("RAG_USE_HYDE", "True").lower() == "true"
     RAG_USE_RERANKING: bool = os.getenv("RAG_USE_RERANKING", "True").lower() == "true"
-    RAG_MAX_OUTPUT_TOKENS: int = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "2000"))  # Increased: can split into multiple embeds
+    RAG_MAX_OUTPUT_TOKENS: int = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "1200"))  # Increased to 1200 for more detailed responses
 
     # Chatbot Configuration
     CHATBOT_CHANNEL_ID: int = int(os.getenv("CHATBOT_CHANNEL_ID", "0"))
@@ -121,7 +129,7 @@ Guidelines:
 
     # Evaluate Command Configuration
     EVALUATE_ENABLED: bool = os.getenv("EVALUATE_ENABLED", "True").lower() == "true"
-    EVALUATE_MAX_TOKENS: int = int(os.getenv("EVALUATE_MAX_TOKENS", "1500"))
+    EVALUATE_MAX_TOKENS: int = int(os.getenv("EVALUATE_MAX_TOKENS", "800"))  # Reduced from 1500 for more concise responses
     EVALUATE_TEMPERATURE: float = float(os.getenv("EVALUATE_TEMPERATURE", "0.3"))
     EVALUATE_PROVIDER: Optional[str] = os.getenv("EVALUATE_PROVIDER")  # Defaults to AI_DEFAULT_PROVIDER if None
 
@@ -242,7 +250,7 @@ Guidelines:
         cls.RAG_USE_MULTI_QUERY = os.getenv("RAG_USE_MULTI_QUERY", "True").lower() == "true"
         cls.RAG_USE_HYDE = os.getenv("RAG_USE_HYDE", "True").lower() == "true"
         cls.RAG_USE_RERANKING = os.getenv("RAG_USE_RERANKING", "True").lower() == "true"
-        cls.RAG_MAX_OUTPUT_TOKENS = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "1000"))
+        cls.RAG_MAX_OUTPUT_TOKENS = int(os.getenv("RAG_MAX_OUTPUT_TOKENS", "1200"))
         cls.RAG_DEFAULT_STRATEGY = os.getenv("RAG_DEFAULT_STRATEGY", "author")
         
         import logging
@@ -279,8 +287,9 @@ Guidelines:
             errors.append("CHATBOT_MAX_TOKENS must be between 50 and 2000")
         if cls.CHATBOT_CHAT_MAX_TOKENS < 50 or cls.CHATBOT_CHAT_MAX_TOKENS > 1000:
             errors.append("CHATBOT_CHAT_MAX_TOKENS must be between 50 and 1000")
-        if cls.CHATBOT_RAG_MAX_TOKENS < 100 or cls.CHATBOT_RAG_MAX_TOKENS > 1000:
-            errors.append("CHATBOT_RAG_MAX_TOKENS must be between 100 and 1000 (Discord limit is ~2000 chars)")
+        # RAG max tokens can be higher since we support splitting long responses
+        if cls.CHATBOT_RAG_MAX_TOKENS < 100 or cls.CHATBOT_RAG_MAX_TOKENS > 5000:
+            errors.append("CHATBOT_RAG_MAX_TOKENS must be between 100 and 5000 (responses will be split if needed)")
         
         # Validate temperature
         if not 0.0 <= cls.CHATBOT_TEMPERATURE <= 2.0:
