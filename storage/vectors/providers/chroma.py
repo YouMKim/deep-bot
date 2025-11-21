@@ -25,6 +25,16 @@ class ChromaVectorStorage(VectorStorage):
     def get_collection(self, collection_name: str):
         try:
             return self.client.get_collection(collection_name)
+        except KeyError as e:
+            # Handle ChromaDB frozenset errors
+            if "frozenset" in str(e).lower():
+                self.logger.warning(
+                    f"ChromaDB frozenset error accessing collection '{collection_name}'. "
+                    "This may indicate corrupted metadata."
+                )
+                # Try to create a new collection
+                return self.client.get_or_create_collection(collection_name)
+            raise
         except Exception as e:
             # If collection doesn't exist, create it
             self.logger.debug(f"Collection '{collection_name}' not found, creating it: {e}")

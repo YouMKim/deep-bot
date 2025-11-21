@@ -27,57 +27,77 @@ class ChromaClient:
         
         # Check if we should reset ChromaDB (for compatibility issues)
         reset_chromadb = os.getenv("RESET_CHROMADB", "False").lower() == "true"
+        self.logger = logging.getLogger(__name__)
         
-        try:
-            # Initialize ChromaDB client with explicit settings to avoid compatibility issues
-            self._client = chromadb.PersistentClient(
-                path=str(chroma_path),
-                settings=chromadb.Settings(anonymized_telemetry=False)
-            )
-            self.logger = logging.getLogger(__name__)
-            
-            # Test if we can list collections (catches frozenset errors early)
+        # If RESET_CHROMADB is enabled, clear database before initializing
+        if reset_chromadb and chroma_path.exists():
+            self.logger.info("RESET_CHROMADB enabled, clearing existing database...")
+            shutil.rmtree(chroma_path)
+        
+        max_retries = 2
+        for attempt in range(max_retries):
             try:
-                _ = self._client.list_collections()
-                self.logger.info("ChromaDB client initialized successfully")
-            except (KeyError, AttributeError) as e:
-                if "frozenset" in str(e).lower():
-                    self.logger.warning(
-                        "ChromaDB metadata compatibility issue detected. "
-                        "Clearing ChromaDB database..."
-                    )
-                    # Close client before deleting
-                    del self._client
-                    # Remove ChromaDB directory
-                    if chroma_path.exists():
-                        shutil.rmtree(chroma_path)
-                        self.logger.info("ChromaDB database cleared")
-                    # Recreate client
-                    self._client = chromadb.PersistentClient(
-                        path=str(chroma_path),
-                        settings=chromadb.Settings(anonymized_telemetry=False)
-                    )
-                    self.logger.info("ChromaDB client reinitialized with clean database")
-                else:
-                    raise
-                    
-        except Exception as e:
-            # If reset is enabled and we hit an error, try clearing and retrying
-            if reset_chromadb and chroma_path.exists():
-                self.logger.warning(f"ChromaDB error detected, resetting database: {e}")
+                # Initialize ChromaDB client with explicit settings to avoid compatibility issues
+                self._client = chromadb.PersistentClient(
+                    path=str(chroma_path),
+                    settings=chromadb.Settings(anonymized_telemetry=False)
+                )
+                
+                # Test if we can list collections (catches frozenset errors early)
                 try:
-                    shutil.rmtree(chroma_path)
-                    self._client = chromadb.PersistentClient(
-                        path=str(chroma_path),
-                        settings=chromadb.Settings(anonymized_telemetry=False)
-                    )
-                    self.logger.info("ChromaDB reset successfully")
-                except Exception as reset_error:
-                    self.logger.error(f"Failed to reset ChromaDB: {reset_error}", exc_info=True)
+                    _ = self._client.list_collections()
+                    self.logger.info("ChromaDB client initialized successfully")
+                    return  # Success, exit retry loop
+                except (KeyError, AttributeError, Exception) as e:
+                    error_str = str(e).lower()
+                    if "frozenset" in error_str or (isinstance(e, KeyError) and not str(e)):
+                        self.logger.warning(
+                            f"ChromaDB metadata compatibility issue detected ({e}). "
+                            "Clearing ChromaDB database and retrying..."
+                        )
+                        # Close client before deleting
+                        try:
+                            del self._client
+                            self._client = None
+                        except:
+                            pass
+                        # Remove ChromaDB directory
+                        if chroma_path.exists():
+                            shutil.rmtree(chroma_path)
+                            self.logger.info("ChromaDB database cleared")
+                        # Retry initialization
+                        if attempt < max_retries - 1:
+                            continue
+                        else:
+                            # Final attempt - recreate client
+                            self._client = chromadb.PersistentClient(
+                                path=str(chroma_path),
+                                settings=chromadb.Settings(anonymized_telemetry=False)
+                            )
+                            self.logger.info("ChromaDB client reinitialized with clean database")
+                            return
+                    else:
+                        raise
+                        
+            except Exception as e:
+                error_str = str(e).lower()
+                # Auto-reset on frozenset errors or KeyError with empty message
+                if ("frozenset" in error_str or (isinstance(e, KeyError) and not str(e))) and chroma_path.exists():
+                    if attempt < max_retries - 1:
+                        self.logger.warning(f"ChromaDB error detected ({e}), resetting database and retrying...")
+                        try:
+                            if self._client:
+                                del self._client
+                                self._client = None
+                        except:
+                            pass
+                        shutil.rmtree(chroma_path)
+                        continue
+                    else:
+                        raise
+                else:
+                    self.logger.error(f"Failed to initialize ChromaDB client: {e}", exc_info=True)
                     raise
-            else:
-                self.logger.error(f"Failed to initialize ChromaDB client: {e}", exc_info=True)
-                raise
 
     @property
     def client(self):
