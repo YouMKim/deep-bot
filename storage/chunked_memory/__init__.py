@@ -75,6 +75,19 @@ class ChunkedMemoryService:
         self.config = config or ConfigClass
         self.active_strategy = default_strategy.value
         self.logger = logging.getLogger(__name__)
+        
+        # Workaround for ChromaDB KeyError: frozenset() issue
+        # Try to list collections early to catch any compatibility issues
+        try:
+            _ = self.vector_store.list_collections()
+        except KeyError as e:
+            if "frozenset" in str(e).lower():
+                self.logger.warning(
+                    "ChromaDB compatibility issue detected. This may be due to corrupted metadata. "
+                    "Collections will be recreated as needed."
+                )
+            else:
+                raise
 
         # Initialize sub-services
         self.author_filter = AuthorFilter(config=self.config)
