@@ -1,8 +1,6 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from sentence_transformers import SentenceTransformer
-
 from embedding.base import EmbeddingBase
 
 
@@ -14,6 +12,23 @@ class SentenceTransformerEmbedder(EmbeddingBase):
         device: Optional[str] = None,
         encode_kwargs: Optional[Dict[str, Any]] = None,
     ):
+        # Lazy import to avoid errors if sentence-transformers/tokenizers not installed
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as e:
+            error_msg = str(e).lower()
+            if "tokenizers" in error_msg:
+                raise ImportError(
+                    "The tokenizers python package is not installed. "
+                    "Please install it with `pip install tokenizers`. "
+                    "sentence-transformers requires tokenizers to function."
+                ) from e
+            raise ImportError(
+                f"sentence-transformers is not installed. "
+                f"Install it with: pip install sentence-transformers tokenizers. "
+                f"Original error: {e}"
+            ) from e
+        
         self.logger = logging.getLogger(__name__)
         self.model_name = model_name
         self.logger.info(

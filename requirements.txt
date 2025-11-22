@@ -26,8 +26,8 @@ pytest-mock>=3.11.0
 
 #embedding and vector database
 chromadb==0.4.22
+tokenizers>=0.15.0  # Required by sentence-transformers/transformers - install first
 sentence-transformers>=2.2.2
-tokenizers>=0.15.0  # Required by sentence-transformers/transformers
 numpy<2.0.0  # Pin to <2.0 to avoid np.float_ removal issue
 
 #chunking and tokenization

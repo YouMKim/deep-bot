@@ -25,6 +25,11 @@ RUN echo "Installing CPU-only PyTorch for sentence-transformers (required for re
     pip install --no-cache-dir --user torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
     echo "PyTorch CPU-only installed"
 
+# Install tokenizers explicitly before sentence-transformers to avoid dependency issues
+RUN echo "Installing tokenizers (required by sentence-transformers)..." && \
+    pip install --no-cache-dir --user tokenizers>=0.15.0 && \
+    echo "Tokenizers installed"
+
 # Install other dependencies
 RUN pip install --no-cache-dir --user -r requirements-prod.txt && \
     pip cache purge && \
