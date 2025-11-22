@@ -1,4 +1,5 @@
 # Multi-stage build for Discord bot
+# Updated to ensure tokenizers compiled extensions are properly copied
 FROM python:3.12-slim as builder
 
 # Install build dependencies including Rust (required for tokenizers)
