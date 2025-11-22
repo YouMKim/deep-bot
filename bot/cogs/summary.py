@@ -31,13 +31,23 @@ class Summary(commands.Cog):
         # Initialize ChunkedMemoryService with error handling for ChromaDB issues
         try:
             self.chunked_memory_service = ChunkedMemoryService(config=self.config)
-        except (KeyError, AttributeError) as e:
-            if "frozenset" in str(e).lower():
+        except (KeyError, AttributeError, TypeError, RuntimeError) as e:
+            error_str = str(e).lower()
+            # Check for various frozenset-related errors:
+            is_frozenset_error = (
+                "frozenset" in error_str or
+                (isinstance(e, KeyError) and (not str(e) or str(e) == "frozenset()")) or
+                (isinstance(e, TypeError) and "frozenset" in error_str) or
+                "chromadb" in error_str
+            )
+            if is_frozenset_error:
                 self.logger.error(
-                    "ChromaDB compatibility issue detected. Summary cog will not work until ChromaDB is reset."
+                    f"ChromaDB compatibility issue detected ({type(e).__name__}: {e}). "
+                    "Set RESET_CHROMADB=true in environment variables to fix this."
                 )
                 raise RuntimeError(
-                    "ChromaDB initialization failed. Please clear the ChromaDB database."
+                    "ChromaDB initialization failed. Set RESET_CHROMADB=true in your environment variables "
+                    "and redeploy. This will clear the ChromaDB database and allow it to be recreated."
                 ) from e
             raise
         

@@ -29,16 +29,23 @@ class RAGPipeline:
         # Initialize ChunkedMemoryService with error handling for ChromaDB issues
         try:
             self.chunked_memory = chunked_memory_service or ChunkedMemoryService(config=self.config)
-        except (KeyError, AttributeError) as e:
-            if "frozenset" in str(e).lower():
-                self.logger.warning(
-                    "ChromaDB compatibility issue detected during RAGPipeline initialization. "
-                    "The bot will continue but RAG features may not work until ChromaDB is reset."
+        except (KeyError, AttributeError, TypeError, RuntimeError) as e:
+            error_str = str(e).lower()
+            # Check for various frozenset-related errors:
+            is_frozenset_error = (
+                "frozenset" in error_str or
+                (isinstance(e, KeyError) and (not str(e) or str(e) == "frozenset()")) or
+                (isinstance(e, TypeError) and "frozenset" in error_str)
+            )
+            if is_frozenset_error:
+                self.logger.error(
+                    f"ChromaDB compatibility issue detected during RAGPipeline initialization ({type(e).__name__}: {e}). "
+                    "Set RESET_CHROMADB=true in environment variables to fix this."
                 )
-                # Create a minimal service that will fail gracefully
                 raise RuntimeError(
                     "ChromaDB initialization failed due to metadata compatibility issue. "
-                    "Please clear the ChromaDB database or contact support."
+                    "Set RESET_CHROMADB=true in your environment variables and redeploy. "
+                    "This will clear the ChromaDB database and allow it to be recreated."
                 ) from e
             raise
         self.ai_service = ai_service or AIService()

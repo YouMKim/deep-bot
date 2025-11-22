@@ -65,10 +65,24 @@ class ChunkedMemoryService:
         # Use config to determine embedding provider and model
         if embedder is None:
             model_name = self.config.EMBEDDING_MODEL if self.config.EMBEDDING_MODEL else ""
-            embedder = EmbeddingFactory.create_embedder(
-                provider=self.config.EMBEDDING_PROVIDER,
-                model_name=model_name
-            )
+            try:
+                embedder = EmbeddingFactory.create_embedder(
+                    provider=self.config.EMBEDDING_PROVIDER,
+                    model_name=model_name
+                )
+            except ImportError as e:
+                if "tokenizers" in str(e).lower() or "sentence-transformers" in str(e).lower():
+                    self.logger.error(
+                        f"Failed to initialize embedder: {e}. "
+                        "Please install tokenizers with: pip install tokenizers "
+                        "Or set EMBEDDING_PROVIDER=openai to use OpenAI embeddings instead."
+                    )
+                    raise RuntimeError(
+                        f"Embedding provider '{self.config.EMBEDDING_PROVIDER}' requires tokenizers. "
+                        "Install it with: pip install tokenizers "
+                        "Or set EMBEDDING_PROVIDER=openai in your environment variables."
+                    ) from e
+                raise
         self.embedder = embedder
         self.message_storage = message_storage or MessageStorage()
         self.chunking_service = chunking_service or ChunkingService()
@@ -80,11 +94,21 @@ class ChunkedMemoryService:
         # Try to list collections early to catch any compatibility issues
         try:
             _ = self.vector_store.list_collections()
-        except KeyError as e:
-            if "frozenset" in str(e).lower():
+        except (KeyError, AttributeError, TypeError) as e:
+            error_str = str(e).lower()
+            # Check for various frozenset-related errors:
+            # 1. KeyError with "frozenset" in message
+            # 2. KeyError with empty message (frozenset() representation)
+            # 3. TypeError from frozenset metadata issues
+            is_frozenset_error = (
+                "frozenset" in error_str or
+                (isinstance(e, KeyError) and (not str(e) or str(e) == "frozenset()")) or
+                (isinstance(e, TypeError) and "frozenset" in error_str)
+            )
+            if is_frozenset_error:
                 self.logger.warning(
-                    "ChromaDB compatibility issue detected. This may be due to corrupted metadata. "
-                    "Collections will be recreated as needed."
+                    f"ChromaDB compatibility issue detected ({type(e).__name__}: {e}). "
+                    "This may be due to corrupted metadata. Collections will be recreated as needed."
                 )
             else:
                 raise
