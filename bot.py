@@ -92,15 +92,9 @@ class DeepBot(commands.Bot):
         # Load configuration
         Config.load_blacklist()
         
-        # Initialize bot knowledge in background (non-blocking)
-        try:
-            from storage.chunked_memory import ChunkedMemoryService
-            chunked_memory = ChunkedMemoryService(config=Config)
-            # Initialize bot knowledge asynchronously
-            import asyncio
-            asyncio.create_task(chunked_memory._initialize_bot_knowledge())
-        except Exception as e:
-            logger.warning(f"Failed to initialize bot knowledge: {e}")
+        # Bot knowledge will be initialized automatically when ChunkedMemoryService
+        # instances are created by the cogs (RAG, Summary, Chatbot)
+        # Each instance will initialize bot knowledge in the background if not already indexed
         
         # Load cogs
         try:

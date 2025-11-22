@@ -239,22 +239,22 @@ class BotKnowledgeService:
             
             # Check if already indexed
             if not force:
-            try:
-                collections = self.vector_store.list_collections()
-                if collection_name in collections:
-                    # Try to get count by querying with a dummy embedding
-                    # Get embedding dimension from embedder
-                    dummy_text = "test"
-                    dummy_embedding = self.embedding_service.embedder.encode(dummy_text)
-                    
-                    results = self.vector_store.query(
-                        collection_name=collection_name,
-                        query_embeddings=[dummy_embedding],
-                        n_results=1
-                    )
-                    if results and results.get('ids') and len(results['ids'][0]) > 0:
-                        self.logger.info("Bot knowledge already indexed, skipping")
-                        return True
+                try:
+                    collections = self.vector_store.list_collections()
+                    if collection_name in collections:
+                        # Try to get count by querying with a dummy embedding
+                        # Get embedding dimension from embedder
+                        dummy_text = "test"
+                        dummy_embedding = self.embedding_service.embedder.encode(dummy_text)
+                        
+                        results = self.vector_store.query(
+                            collection_name=collection_name,
+                            query_embeddings=[dummy_embedding],
+                            n_results=1
+                        )
+                        if results and results.get('ids') and len(results['ids'][0]) > 0:
+                            self.logger.info("Bot knowledge already indexed, skipping")
+                            return True
                 except Exception as e:
                     self.logger.debug(f"Could not check existing index: {e}")
                     # Continue with indexing

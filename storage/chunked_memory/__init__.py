@@ -148,8 +148,25 @@ class ChunkedMemoryService:
             config=self.config
         )
         
-        # Note: Bot knowledge initialization happens lazily on first use
-        # or can be triggered manually via admin command
+        # Initialize bot knowledge automatically on startup
+        # Checks if already indexed, and if not, indexes it in the background
+        self._bot_knowledge_init_pending = True
+        self._bot_knowledge_init_attempted = False
+        
+        # Try to initialize immediately if event loop is available
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Event loop is running, initialize in background (non-blocking)
+                # This checks if already indexed and only loads if needed
+                asyncio.create_task(self._initialize_bot_knowledge())
+                self._bot_knowledge_init_pending = False
+                self._bot_knowledge_init_attempted = True
+        except (RuntimeError, AttributeError):
+            # No event loop yet, will initialize lazily on first search
+            # This ensures bot knowledge is available even if startup initialization fails
+            pass
 
     def set_active_strategy(self, strategy: ChunkStrategy) -> None:
         """Set the active chunking strategy."""
@@ -219,6 +236,8 @@ class ChunkedMemoryService:
         filter_authors: Optional[List[str]] = None,
     ) -> List[Dict]:
         """Keyword-based search using BM25 (backward compatibility)."""
+        # Ensure bot knowledge is initialized (lazy initialization)
+        self._ensure_bot_knowledge_initialized()
         return self.bm25_service.search(
             query=query,
             strategy=strategy,
@@ -239,6 +258,8 @@ class ChunkedMemoryService:
         filter_authors: Optional[List[str]] = None,
     ) -> List[Dict]:
         """Hybrid search combining BM25 and vector similarity (backward compatibility)."""
+        # Ensure bot knowledge is initialized (lazy initialization)
+        self._ensure_bot_knowledge_initialized()
         return await self.retrieval_service.search_hybrid(
             query=query,
             strategy=strategy,
@@ -291,9 +312,31 @@ class ChunkedMemoryService:
     async def _initialize_bot_knowledge(self) -> None:
         """Initialize bot knowledge in background."""
         try:
-            await self.bot_knowledge_service.ingest_bot_knowledge(force=False)
+            self.logger.info("Initializing bot knowledge...")
+            success = await self.bot_knowledge_service.ingest_bot_knowledge(force=False)
+            if success:
+                self.logger.info("Bot knowledge initialized successfully")
+            else:
+                self.logger.info("Bot knowledge already indexed or initialization skipped")
         except Exception as e:
             self.logger.warning(f"Failed to initialize bot knowledge: {e}", exc_info=True)
+    
+    def _ensure_bot_knowledge_initialized(self):
+        """Ensure bot knowledge is initialized (lazy initialization on first search)."""
+        if (hasattr(self, '_bot_knowledge_init_pending') and 
+            self._bot_knowledge_init_pending and 
+            not getattr(self, '_bot_knowledge_init_attempted', False)):
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Initialize in background
+                    asyncio.create_task(self._initialize_bot_knowledge())
+                    self._bot_knowledge_init_pending = False
+                    self._bot_knowledge_init_attempted = True
+            except (RuntimeError, AttributeError):
+                # Event loop not available, will try again next time
+                pass
     
     async def reindex_bot_knowledge(self, force: bool = True) -> bool:
         """
