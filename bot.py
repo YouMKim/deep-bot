@@ -34,47 +34,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Diagnostic check for critical packages at startup
-def check_packages():
-    """Check if critical packages are available."""
-    import sys
-    import os
-    
-    logger.info("=" * 60)
-    logger.info("Package Diagnostic Check")
-    logger.info("=" * 60)
-    logger.info(f"Python version: {sys.version}")
-    logger.info(f"Python executable: {sys.executable}")
-    logger.info(f"Python path: {sys.path}")
-    
-    # Check if tokenizers is importable
-    try:
-        import tokenizers
-        logger.info(f"✓ tokenizers {tokenizers.__version__} is available")
-    except ImportError as e:
-        logger.error(f"✗ tokenizers is NOT available: {e}")
-        logger.error(f"  sys.path entries: {sys.path}")
-        
-        # Check if site-packages directory exists
-        site_packages_paths = [p for p in sys.path if 'site-packages' in p]
-        logger.error(f"  site-packages paths: {site_packages_paths}")
-        for sp_path in site_packages_paths:
-            if os.path.exists(sp_path):
-                tokenizers_path = os.path.join(sp_path, 'tokenizers')
-                logger.error(f"    {sp_path}: exists={os.path.exists(sp_path)}, tokenizers exists={os.path.exists(tokenizers_path)}")
-    
-    # Check if sentence-transformers is importable
-    try:
-        import sentence_transformers
-        logger.info(f"✓ sentence-transformers is available")
-    except ImportError as e:
-        logger.error(f"✗ sentence-transformers is NOT available: {e}")
-    
-    logger.info("=" * 60)
-
-# Run diagnostic check
-check_packages()
-
 
 class DeepBot(commands.Bot):
     """Main bot class."""
@@ -132,6 +91,16 @@ class DeepBot(commands.Bot):
         """Called when the bot is starting up."""
         # Load configuration
         Config.load_blacklist()
+        
+        # Initialize bot knowledge in background (non-blocking)
+        try:
+            from storage.chunked_memory import ChunkedMemoryService
+            chunked_memory = ChunkedMemoryService(config=Config)
+            # Initialize bot knowledge asynchronously
+            import asyncio
+            asyncio.create_task(chunked_memory._initialize_bot_knowledge())
+        except Exception as e:
+            logger.warning(f"Failed to initialize bot knowledge: {e}")
         
         # Load cogs
         try:

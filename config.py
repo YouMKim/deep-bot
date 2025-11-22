@@ -4,12 +4,15 @@ Handles loading environment variables securely.
 """
 
 import os
+import logging
 from discord import Intents
 from dotenv import load_dotenv
 from typing import Optional
 
 # Load environment variables from .env file
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -111,6 +114,7 @@ class Config:
         "CHATBOT_SYSTEM_PROMPT",
         """You are a helpful Discord chatbot assistant named Deep-Bot. 
 You have access to past conversation history from this Discord server and can answer questions about what was discussed.
+You can also answer questions about Deep-Bot's capabilities, commands, and how it works.
 
 Guidelines:
 - Be conversational, concise, and engaging (like a Discord message)
@@ -118,6 +122,7 @@ Guidelines:
 - If you don't have enough context, say so politely
 - Keep responses under 400 tokens (roughly 300 words)
 - Use natural language, not bullet points or lists
+- When asked about Deep-Bot itself, use information from the bot documentation if available
 - Reference people by their Discord display names when mentioning past conversations
 - Be friendly but not overly casual"""
     )
@@ -162,7 +167,6 @@ Guidelines:
             
             cls.BLACKLIST_IDS = ids
             logger.info(f"Loaded {len(cls.BLACKLIST_IDS)} blacklisted user IDs")
-            print(f"✅ Loaded {len(cls.BLACKLIST_IDS)} blacklisted user IDs")
         except ValueError as e:
             logger.error(f"Error parsing BLACKLIST_IDS: {e}")
             print(f"❌ Error parsing BLACKLIST_IDS: {e}")
@@ -176,6 +180,8 @@ Guidelines:
     @classmethod
     def validate(cls) -> bool:
         """Validate that all required environment variables are set."""
+        import logging
+        logger = logging.getLogger(__name__)
         required_vars = ["DISCORD_TOKEN", "OPENAI_API_KEY"]
 
         missing_vars = []
@@ -192,7 +198,7 @@ Guidelines:
             )
             return False
 
-        print("All required environment variables are set.")
+        logger.debug("All required environment variables are set.")
         return True
 
     @classmethod

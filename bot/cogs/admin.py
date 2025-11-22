@@ -1170,6 +1170,42 @@ class Admin(commands.Cog):
             await ctx.send(embed=embed)
         except Exception as e:
             await ctx.send(f"❌ Error switching provider: {e}")
+    
+    @commands.command(name='reindex_bot_knowledge', help='Re-index bot documentation into RAG system (Admin only)')
+    @commands.is_owner()
+    async def reindex_bot_knowledge(self, ctx, force: str = "false"):
+        """
+        Re-index bot documentation into the RAG system. (Admin only)
+        
+        Usage:
+            !reindex_bot_knowledge - Re-index if not already indexed
+            !reindex_bot_knowledge true - Force re-index even if already indexed
+        """
+        status_msg = await ctx.send("🔄 Re-indexing bot knowledge...")
+        
+        try:
+            # Get ChunkedMemoryService from Summary cog
+            summary_cog = self.bot.get_cog("Summary")
+            if not summary_cog or not hasattr(summary_cog, 'chunked_memory_service'):
+                await status_msg.edit(content="❌ Summary cog not loaded. Cannot access chunked memory service.")
+                return
+            
+            chunked_memory = summary_cog.chunked_memory_service
+            if not hasattr(chunked_memory, 'reindex_bot_knowledge'):
+                await status_msg.edit(content="❌ Bot knowledge service not available.")
+                return
+            
+            force_bool = force.lower() == "true"
+            success = await chunked_memory.reindex_bot_knowledge(force=force_bool)
+            
+            if success:
+                await status_msg.edit(content="✅ Bot knowledge successfully re-indexed!")
+            else:
+                await status_msg.edit(content="❌ Failed to re-index bot knowledge. Check logs for details.")
+                
+        except Exception as e:
+            self.logger.error(f"Error re-indexing bot knowledge: {e}", exc_info=True)
+            await status_msg.edit(content=f"❌ Error: {e}")
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))

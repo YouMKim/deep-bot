@@ -24,6 +24,7 @@ from .embedding_service import EmbeddingService
 from .bm25_service import BM25Service
 from .retrieval_service import RetrievalService
 from .ingestion_service import IngestionService
+from .bot_knowledge_service import BotKnowledgeService
 from .utils import get_collection_name, resolve_strategy, calculate_fetch_k
 
 if TYPE_CHECKING:
@@ -141,6 +142,14 @@ class ChunkedMemoryService:
             bm25_service=self.bm25_service,
             config=self.config
         )
+        self.bot_knowledge_service = BotKnowledgeService(
+            vector_store=self.vector_store,
+            embedding_service=self.embedding_service,
+            config=self.config
+        )
+        
+        # Note: Bot knowledge initialization happens lazily on first use
+        # or can be triggered manually via admin command
 
     def set_active_strategy(self, strategy: ChunkStrategy) -> None:
         """Set the active chunking strategy."""
@@ -278,4 +287,23 @@ class ChunkedMemoryService:
     async def _report_progress(self, progress: Dict[str, Any]) -> None:
         """Report progress via callback (backward compatibility)."""
         await self.ingestion_service.report_progress(progress)
+    
+    async def _initialize_bot_knowledge(self) -> None:
+        """Initialize bot knowledge in background."""
+        try:
+            await self.bot_knowledge_service.ingest_bot_knowledge(force=False)
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize bot knowledge: {e}", exc_info=True)
+    
+    async def reindex_bot_knowledge(self, force: bool = True) -> bool:
+        """
+        Re-index bot knowledge documentation.
+        
+        Args:
+            force: If True, re-index even if already indexed
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return await self.bot_knowledge_service.ingest_bot_knowledge(force=force)
 

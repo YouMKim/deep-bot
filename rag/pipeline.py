@@ -185,8 +185,55 @@ class RAGPipeline:
 
         # Retrieve more candidates if reranking is enabled
         # (reranker needs more options to choose from)
-        from storage.chunked_memory.utils import calculate_fetch_k
+        from storage.chunked_memory.utils import calculate_fetch_k, get_collection_name
         fetch_k = calculate_fetch_k(config.top_k, needs_reranking=config.use_reranking)
+        
+        # Also search bot knowledge collection
+        bot_docs_results = []
+        try:
+            bot_docs_collection = get_collection_name('bot_docs')
+            collections = self.chunked_memory.vector_store.list_collections()
+            if bot_docs_collection in collections:
+                # Search bot docs collection directly
+                import asyncio
+                loop = asyncio.get_event_loop()
+                query_embedding = await loop.run_in_executor(
+                    None,
+                    self.chunked_memory.embedder.encode,
+                    search_query
+                )
+                
+                bot_docs_raw = self.chunked_memory.vector_store.query(
+                    collection_name=bot_docs_collection,
+                    query_embeddings=[query_embedding],
+                    n_results=min(config.top_k // 2, 5)  # Get fewer from bot docs
+                )
+                
+                # Format results similar to retrieval_service
+                if bot_docs_raw and bot_docs_raw.get('documents') and bot_docs_raw['documents'][0]:
+                    documents = bot_docs_raw['documents'][0]
+                    metadatas = bot_docs_raw.get('metadatas', [[]])[0] if bot_docs_raw.get('metadatas') else []
+                    distances = bot_docs_raw.get('distances', [[]])[0] if bot_docs_raw.get('distances') else []
+                    
+                    for idx, doc in enumerate(documents):
+                        metadata = metadatas[idx] if idx < len(metadatas) else {}
+                        distance = distances[idx] if idx < len(distances) else 1.0
+                        similarity = 1 - distance if distance <= 1 else 0
+                        
+                        bot_docs_results.append({
+                            'content': doc,
+                            'metadata': {
+                                **metadata,
+                                'source': 'bot_documentation',
+                                'collection': 'bot_docs',
+                                'channel_id': 'system',
+                                'author': 'system'
+                            },
+                            'similarity': similarity,
+                            'distance': distance
+                        })
+        except Exception as e:
+            self.logger.debug(f"Could not search bot knowledge: {e}")
 
         # Use hybrid search if enabled
         if config.use_hybrid_search:
@@ -209,7 +256,12 @@ class RAGPipeline:
                 filter_authors=config.filter_authors,
             )
 
-        self.logger.info(f"Retrieved {len(chunks)} chunks")
+        # Combine bot docs with regular chunks
+        if bot_docs_results:
+            chunks = bot_docs_results + chunks
+            self.logger.info(f"Retrieved {len(chunks)} chunks ({len(bot_docs_results)} from bot docs, {len(chunks) - len(bot_docs_results)} from messages)")
+        else:
+            self.logger.info(f"Retrieved {len(chunks)} chunks")
         
         # Re-rank if enabled (AFTER retrieval)
         # Run reranking in executor to avoid blocking event loop
