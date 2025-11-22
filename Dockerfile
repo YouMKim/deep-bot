@@ -65,12 +65,13 @@ RUN mkdir -p /usr/local/lib/python3.12/site-packages && \
 COPY --from=builder /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
+# Reinstall tokenizers to ensure compiled extensions work correctly
+# This fixes issues where .so files might not be compatible or missing
+RUN pip install --no-cache-dir --force-reinstall --no-deps tokenizers>=0.15.0 || \
+    pip install --no-cache-dir tokenizers>=0.15.0
+
 # Verify critical packages are installed and importable BEFORE cleanup
-# Also verify compiled extensions exist
-RUN echo "Checking tokenizers installation..." && \
-    ls -la /usr/local/lib/python3.12/site-packages/tokenizers/ 2>/dev/null | head -20 && \
-    find /usr/local/lib/python3.12/site-packages/tokenizers -name "*.so" | head -5 && \
-    python -c "import tokenizers; print(f'✓ tokenizers {tokenizers.__version__} installed')" && \
+RUN python -c "import tokenizers; print(f'✓ tokenizers {tokenizers.__version__} installed')" && \
     python -c "import sentence_transformers; print(f'✓ sentence-transformers installed')" && \
     echo "All required packages verified"
 
