@@ -61,6 +61,10 @@ class ChunkedMemoryService:
         from embedding.factory import EmbeddingFactory
         from config import Config as ConfigClass
         
+        # Set config first so it's available for use below
+        self.config = config or ConfigClass
+        self.logger = logging.getLogger(__name__)
+        
         self.vector_store = vector_store or VectorStoreFactory.create()
         # Use config to determine embedding provider and model
         if embedder is None:
@@ -86,9 +90,7 @@ class ChunkedMemoryService:
         self.embedder = embedder
         self.message_storage = message_storage or MessageStorage()
         self.chunking_service = chunking_service or ChunkingService()
-        self.config = config or ConfigClass
         self.active_strategy = default_strategy.value
-        self.logger = logging.getLogger(__name__)
         
         # Workaround for ChromaDB KeyError: frozenset() issue
         # Try to list collections early to catch any compatibility issues
