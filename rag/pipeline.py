@@ -7,7 +7,6 @@ from .models import RAGConfig, RAGResult
 from chunking.constants import ChunkStrategy
 from rag.query_enhancement import QueryEnhancementService
 from rag.hybrid_search import reciprocal_rank_fusion
-from rag.reranking import ReRankingService
 from .validation import QueryValidator
 
 if TYPE_CHECKING:
@@ -216,7 +215,18 @@ class RAGPipeline:
         # Run reranking in executor to avoid blocking event loop
         if config.use_reranking and chunks:
             if self.reranker is None:
-                self.reranker = ReRankingService()
+                # Lazy import to avoid errors if sentence-transformers not installed
+                try:
+                    from rag.reranking import ReRankingService
+                    self.reranker = ReRankingService()
+                except ImportError as e:
+                    self.logger.error(
+                        f"Failed to import ReRankingService: {e}. "
+                        "Reranking requires sentence-transformers. "
+                        "Install it with: pip install sentence-transformers tokenizers"
+                    )
+                    # Disable reranking for this request
+                    return chunks
 
             import asyncio
             loop = asyncio.get_event_loop()

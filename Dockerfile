@@ -17,21 +17,13 @@ COPY requirements.txt .
 # Create production requirements without test/dev dependencies
 RUN grep -vE "(pytest|black)" requirements.txt > requirements-prod.txt || cp requirements.txt requirements-prod.txt
 
-# If using OpenAI embeddings, exclude sentence-transformers (saves ~2GB by removing PyTorch)
-ARG EMBEDDING_PROVIDER=sentence-transformers
-RUN if [ "$EMBEDDING_PROVIDER" = "openai" ]; then \
-        echo "Using OpenAI embeddings - excluding sentence-transformers to reduce image size" && \
-        grep -v "sentence-transformers" requirements-prod.txt > requirements-prod-temp.txt && \
-        mv requirements-prod-temp.txt requirements-prod.txt; \
-    fi
-
+# Always install sentence-transformers and tokenizers (needed for reranking)
+# Even when using OpenAI embeddings, reranking still requires sentence-transformers
 # Install CPU-only PyTorch first (much smaller than GPU version)
 # This reduces PyTorch size from ~2GB to ~500MB
-RUN if grep -q "sentence-transformers" requirements-prod.txt; then \
-        echo "Installing CPU-only PyTorch for sentence-transformers..." && \
-        pip install --no-cache-dir --user torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-        echo "PyTorch CPU-only installed"; \
-    fi
+RUN echo "Installing CPU-only PyTorch for sentence-transformers (required for reranking)..." && \
+    pip install --no-cache-dir --user torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    echo "PyTorch CPU-only installed"
 
 # Install other dependencies
 RUN pip install --no-cache-dir --user -r requirements-prod.txt && \
