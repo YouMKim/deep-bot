@@ -22,24 +22,21 @@ RUN grep -vE "(pytest|black)" requirements.txt > requirements-prod.txt || cp req
 # Install CPU-only PyTorch first (much smaller than GPU version)
 # This reduces PyTorch size from ~2GB to ~500MB
 RUN echo "Installing CPU-only PyTorch for sentence-transformers (required for reranking)..." && \
-    pip install --no-cache-dir --user torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
     echo "PyTorch CPU-only installed"
 
 # Install tokenizers explicitly before sentence-transformers to avoid dependency issues
 RUN echo "Installing tokenizers (required by sentence-transformers)..." && \
-    pip install --no-cache-dir --user tokenizers>=0.15.0 && \
+    pip install --no-cache-dir tokenizers>=0.15.0 && \
     echo "Tokenizers installed"
 
 # Install other dependencies
-RUN pip install --no-cache-dir --user -r requirements-prod.txt && \
+RUN pip install --no-cache-dir -r requirements-prod.txt && \
     pip cache purge && \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/* && \
-    find /root/.local -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true && \
-    find /root/.local -name "*.pyc" -delete 2>/dev/null || true && \
-    find /root/.local -name "*.pyo" -delete 2>/dev/null || true && \
-    find /root/.local -type d -name "tests" -exec rm -r {} + 2>/dev/null || true && \
-    find /root/.local -type d -name "test" -exec rm -r {} + 2>/dev/null || true && \
-    find /root/.local -type d -name "__pycache__" -exec rm -r {} + 2>/dev/null || true
+    find /usr/local/lib/python3.12/site-packages -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.12/site-packages -name "*.pyc" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.12/site-packages -name "*.pyo" -delete 2>/dev/null || true
 
 # Final stage - minimal runtime image
 FROM python:3.12-slim
@@ -51,20 +48,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/cache/apt/archives/*
 
-# Copy Python packages from builder (exclude model cache and pip cache)
-COPY --from=builder /root/.local /root/.local
+# Copy Python packages from builder (system-wide installation)
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Verify critical packages are installed and importable
+RUN python -c "import tokenizers; print(f'✓ tokenizers {tokenizers.__version__} installed')" && \
+    python -c "import sentence_transformers; print(f'✓ sentence-transformers installed')" && \
+    echo "All required packages verified"
 
 # Clean up any cached models, test files, and documentation (keep .dist-info for Python)
-RUN rm -rf /root/.local/lib/python*/site-packages/*/models/* 2>/dev/null || true && \
-    rm -rf /root/.local/lib/python*/site-packages/*/cache/* 2>/dev/null || true && \
-    find /root/.local -type d -name "tests" -exec rm -r {} + 2>/dev/null || true && \
-    find /root/.local -type d -name "test" -exec rm -r {} + 2>/dev/null || true && \
-    find /root/.local -name "*.md" -not -path "*/.dist-info/*" -delete 2>/dev/null || true && \
-    find /root/.local -name "*.txt" -path "*/test*" -not -path "*/.dist-info/*" -delete 2>/dev/null || true && \
-    find /root/.local -name "*.rst" -not -path "*/.dist-info/*" -delete 2>/dev/null || true
-
-# Make sure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
+RUN rm -rf /usr/local/lib/python3.12/site-packages/*/models/* 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.12/site-packages/*/cache/* 2>/dev/null || true && \
+    find /usr/local/lib/python3.12/site-packages -type d -name "tests" -exec rm -r {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.12/site-packages -type d -name "test" -exec rm -r {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.12/site-packages -name "*.md" -not -path "*/.dist-info/*" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.12/site-packages -name "*.txt" -path "*/test*" -not -path "*/.dist-info/*" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.12/site-packages -name "*.rst" -not -path "*/.dist-info/*" -delete 2>/dev/null || true
 
 # Set HuggingFace cache location (will be mounted as volume)
 ENV HF_HOME=/root/.cache/huggingface
