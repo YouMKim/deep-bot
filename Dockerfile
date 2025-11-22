@@ -1,11 +1,14 @@
 # Multi-stage build for Discord bot
 FROM python:3.12-slim as builder
 
-# Install build dependencies
+# Install build dependencies including Rust (required for tokenizers)
 RUN apt-get update && apt-get install -y \
     build-essential \
     gcc \
     g++ \
+    curl \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && . $HOME/.cargo/env \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -26,7 +29,9 @@ RUN echo "Installing CPU-only PyTorch for sentence-transformers (required for re
     echo "PyTorch CPU-only installed"
 
 # Install tokenizers explicitly before sentence-transformers to avoid dependency issues
+# Ensure Rust is in PATH for compilation
 RUN echo "Installing tokenizers (required by sentence-transformers)..." && \
+    . $HOME/.cargo/env && \
     pip install --no-cache-dir tokenizers>=0.15.0 && \
     echo "Tokenizers installed"
 
@@ -42,33 +47,38 @@ RUN pip install --no-cache-dir -r requirements-prod.txt && \
 FROM python:3.12-slim
 
 # Install only essential runtime dependencies
+# libgcc-s1 may be needed for tokenizers compiled extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
+    libgcc-s1 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /var/cache/apt/archives/*
 
 # Copy Python packages from builder (system-wide installation)
-# Ensure directories exist first
+# Ensure directories exist first and copy ALL files including compiled extensions
 RUN mkdir -p /usr/local/lib/python3.12/site-packages && \
     mkdir -p /usr/local/bin
 
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Copy site-packages preserving all files including .so files (compiled extensions)
+COPY --from=builder /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
-# Verify critical packages are installed and importable
-RUN python -c "import tokenizers; print(f'✓ tokenizers {tokenizers.__version__} installed')" && \
+# Verify critical packages are installed and importable BEFORE cleanup
+# Also verify compiled extensions exist
+RUN echo "Checking tokenizers installation..." && \
+    ls -la /usr/local/lib/python3.12/site-packages/tokenizers/ 2>/dev/null | head -20 && \
+    find /usr/local/lib/python3.12/site-packages/tokenizers -name "*.so" | head -5 && \
+    python -c "import tokenizers; print(f'✓ tokenizers {tokenizers.__version__} installed')" && \
     python -c "import sentence_transformers; print(f'✓ sentence-transformers installed')" && \
     echo "All required packages verified"
 
-# Clean up any cached models, test files, and documentation (keep .dist-info for Python)
-RUN rm -rf /usr/local/lib/python3.12/site-packages/*/models/* 2>/dev/null || true && \
-    rm -rf /usr/local/lib/python3.12/site-packages/*/cache/* 2>/dev/null || true && \
-    find /usr/local/lib/python3.12/site-packages -type d -name "tests" -exec rm -r {} + 2>/dev/null || true && \
-    find /usr/local/lib/python3.12/site-packages -type d -name "test" -exec rm -r {} + 2>/dev/null || true && \
-    find /usr/local/lib/python3.12/site-packages -name "*.md" -not -path "*/.dist-info/*" -delete 2>/dev/null || true && \
+# Clean up ONLY documentation and test files (preserve all .so, .py, and .dist-info files)
+RUN find /usr/local/lib/python3.12/site-packages -name "*.md" -not -path "*/.dist-info/*" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.12/site-packages -name "*.rst" -not -path "*/.dist-info/*" -delete 2>/dev/null || true && \
     find /usr/local/lib/python3.12/site-packages -name "*.txt" -path "*/test*" -not -path "*/.dist-info/*" -delete 2>/dev/null || true && \
-    find /usr/local/lib/python3.12/site-packages -name "*.rst" -not -path "*/.dist-info/*" -delete 2>/dev/null || true
+    find /usr/local/lib/python3.12/site-packages -type d -name "tests" -exec rm -r {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.12/site-packages -type d -name "test" -exec rm -r {} + 2>/dev/null || true
 
 # Set HuggingFace cache location (will be mounted as volume)
 ENV HF_HOME=/root/.cache/huggingface
