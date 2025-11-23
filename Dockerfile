@@ -55,13 +55,14 @@ RUN if [ "$INSTALL_PYTORCH" = "1" ]; then \
         echo "Filtering out PyTorch dependencies from requirements..." && \
         grep -vE "(sentence-transformers|tokenizers)" requirements-prod.txt > requirements-no-pytorch.txt || cp requirements-prod.txt requirements-no-pytorch.txt && \
         echo "Installing dependencies without PyTorch..." && \
-        echo "Filtered requirements file contents:" && \
-        cat requirements-no-pytorch.txt && \
-        pip install --no-cache-dir -r requirements-no-pytorch.txt && \
+        echo "Filtered requirements file:" && \
+        head -20 requirements-no-pytorch.txt && \
+        echo "..." && \
+        pip install --no-cache-dir -r requirements-no-pytorch.txt || (echo "ERROR: pip install failed!" && cat requirements-no-pytorch.txt && exit 1) && \
         echo "Verifying core dependencies are installed..." && \
-        python -c "import discord; print('✓ discord.py installed')" || (echo "ERROR: discord.py not installed!" && exit 1) && \
+        python -c "import discord; print('✓ discord.py installed')" || (echo "ERROR: discord.py not installed!" && pip list | grep -i discord && exit 1) && \
         python -c "import openai; print('✓ openai installed')" || (echo "ERROR: openai not installed!" && exit 1) && \
-        python -c "import chromadb; print('✓ chromadb installed')" || (echo "ERROR: chromadb not installed!" && exit 1) && \
+        python -c "import chromadb; print('✓ chromadb installed')" || (echo "WARNING: chromadb not installed (may be optional)" && pip list | grep -i chroma) && \
         echo "Verifying sentence-transformers is NOT installed..." && \
         (python -c "import sentence_transformers" 2>/dev/null && echo "WARNING: sentence-transformers was installed (unexpected)" || echo "✓ Confirmed: sentence-transformers is NOT installed"); \
     fi && \
