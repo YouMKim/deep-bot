@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import asyncio
 import logging
+from datetime import datetime
 from storage.messages import MessageStorage
 from bot.loaders.message_loader import MessageLoader
 from ai.service import AIService
@@ -372,6 +373,220 @@ class Admin(commands.Cog):
             
         except Exception as e:
             await ctx.send(f"❌ Error loading channel messages: {e}")
+
+    @commands.command(name='load_server', help='Load all messages from all channels in the server (Admin only)')
+    @commands.is_owner()
+    @commands.guild_only()
+    async def load_server(self, ctx, limit: int = None):
+        """
+        Load all messages from all text channels in the server.
+        This does everything that !load_channel does, but for all channels:
+        - Saves messages to SQLite
+        - Creates checkpoints per channel
+        - Triggers chunking and embedding for each channel
+        
+        Suitable for running as a cronjob - handles errors gracefully and continues processing.
+        """
+        try:
+            guild = ctx.guild
+            if not guild:
+                await ctx.send("❌ This command can only be used in a server.")
+                return
+            
+            # Get all text channels
+            text_channels = [ch for ch in guild.text_channels if ch.permissions_for(guild.me).read_message_history]
+            
+            if not text_channels:
+                await ctx.send("❌ No accessible text channels found in this server.")
+                return
+            
+            if limit and limit > 100000:
+                warning = await ctx.send(
+                    f"⚠️ **Warning:** Loading {limit:,} messages per channel may take a very long time. "
+                    f"Use `!load_server` without limit to load all messages (recommended). "
+                    f"This can be safely interrupted and resumed."
+                )
+            
+            # Initial status message
+            status_msg = await ctx.send(
+                f"🔄 Starting server-wide load: {len(text_channels)} channels to process...\n"
+                f"This may take a while. Progress will be updated periodically."
+            )
+            
+            # Track overall statistics
+            server_stats = {
+                "total_channels": len(text_channels),
+                "channels_processed": 0,
+                "channels_successful": 0,
+                "channels_failed": 0,
+                "total_messages_loaded": 0,
+                "total_chunks_created": 0,
+                "channels_with_errors": [],
+                "start_time": datetime.now(),
+                "channel_results": []
+            }
+            
+            # Process each channel
+            for idx, channel in enumerate(text_channels, 1):
+                try:
+                    # Update status
+                    await status_msg.edit(
+                        content=(
+                            f"🔄 Processing channel {idx}/{len(text_channels)}: #{channel.name}\n"
+                            f"✅ Completed: {server_stats['channels_successful']} | "
+                            f"❌ Failed: {server_stats['channels_failed']}"
+                        )
+                    )
+                    
+                    # Progress callback for this channel
+                    async def progress_callback(progress):
+                        # Only update periodically to avoid spam
+                        if progress['processed'] % 500 == 0 or progress['processed'] == 1:
+                            try:
+                                await status_msg.edit(
+                                    content=(
+                                        f"🔄 Channel {idx}/{len(text_channels)}: #{channel.name}\n"
+                                        f"Processed: {progress['processed']} | "
+                                        f"Saved: {progress['successful']} ({progress['rate']:.1f} msg/s)\n"
+                                        f"✅ Completed: {server_stats['channels_successful']} | "
+                                        f"❌ Failed: {server_stats['channels_failed']}"
+                                    )
+                                )
+                            except Exception:
+                                pass  # Ignore update errors
+                    
+                    self.message_loader.set_progress_callback(progress_callback)
+                    
+                    # Stage 1: Load messages from Discord → SQLite
+                    channel_stats = await self.message_loader.load_channel_messages(
+                        channel=channel,
+                        limit=limit
+                    )
+                    
+                    server_stats["channels_processed"] += 1
+                    server_stats["total_messages_loaded"] += channel_stats.get('successfully_loaded', 0)
+                    
+                    # Stage 2: Chunk and embed (only if messages were loaded)
+                    if channel_stats.get('successfully_loaded', 0) > 0:
+                        try:
+                            from storage.chunked_memory import ChunkedMemoryService
+                            chunked_service = ChunkedMemoryService(config=self.config)
+                            
+                            # Run chunking synchronously (we're already in a loop)
+                            chunk_stats = await chunked_service.ingest_channel(
+                                channel_id=str(channel.id)
+                            )
+                            
+                            server_stats["total_chunks_created"] += chunk_stats.get('total_chunks_created', 0)
+                            server_stats["channels_successful"] += 1
+                            
+                            # Store channel result
+                            server_stats["channel_results"].append({
+                                "channel": channel.name,
+                                "messages_loaded": channel_stats.get('successfully_loaded', 0),
+                                "chunks_created": chunk_stats.get('total_chunks_created', 0),
+                                "status": "success"
+                            })
+                            
+                        except Exception as e:
+                            self.logger.error(f"Chunking failed for #{channel.name}: {e}", exc_info=True)
+                            server_stats["channels_failed"] += 1
+                            server_stats["channels_with_errors"].append(f"#{channel.name} (chunking)")
+                            server_stats["channel_results"].append({
+                                "channel": channel.name,
+                                "messages_loaded": channel_stats.get('successfully_loaded', 0),
+                                "chunks_created": 0,
+                                "status": "chunking_failed",
+                                "error": str(e)
+                            })
+                    else:
+                        # No messages loaded (might be empty channel or already up-to-date)
+                        server_stats["channels_successful"] += 1
+                        server_stats["channel_results"].append({
+                            "channel": channel.name,
+                            "messages_loaded": 0,
+                            "chunks_created": 0,
+                            "status": "no_messages"
+                        })
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to process channel #{channel.name}: {e}", exc_info=True)
+                    server_stats["channels_failed"] += 1
+                    server_stats["channels_with_errors"].append(f"#{channel.name} (loading)")
+                    server_stats["channel_results"].append({
+                        "channel": channel.name,
+                        "messages_loaded": 0,
+                        "chunks_created": 0,
+                        "status": "failed",
+                        "error": str(e)
+                    })
+                    continue  # Continue with next channel
+            
+            # Calculate duration
+            server_stats["end_time"] = datetime.now()
+            duration = (server_stats["end_time"] - server_stats["start_time"]).total_seconds()
+            
+            # Create summary embed
+            embed = discord.Embed(
+                title="📥 Server Loading Complete",
+                description=f"Processed {len(text_channels)} channels in {guild.name}",
+                color=discord.Color.green() if server_stats["channels_failed"] == 0 else discord.Color.orange()
+            )
+            
+            embed.add_field(
+                name="📊 Overall Statistics",
+                value=(
+                    f"**Channels Processed:** {server_stats['channels_processed']}/{server_stats['total_channels']}\n"
+                    f"**Successful:** {server_stats['channels_successful']}\n"
+                    f"**Failed:** {server_stats['channels_failed']}\n"
+                    f"**Total Messages Loaded:** {server_stats['total_messages_loaded']:,}\n"
+                    f"**Total Chunks Created:** {server_stats['total_chunks_created']:,}\n"
+                    f"**Duration:** {duration:.1f} seconds ({duration/60:.1f} minutes)"
+                ),
+                inline=False
+            )
+            
+            # Show channels with errors if any
+            if server_stats["channels_with_errors"]:
+                error_list = "\n".join(server_stats["channels_with_errors"][:10])  # Limit to 10
+                if len(server_stats["channels_with_errors"]) > 10:
+                    error_list += f"\n... and {len(server_stats['channels_with_errors']) - 10} more"
+                embed.add_field(
+                    name="⚠️ Channels with Errors",
+                    value=error_list,
+                    inline=False
+                )
+            
+            # Show top channels by message count
+            top_channels = sorted(
+                [r for r in server_stats["channel_results"] if r["messages_loaded"] > 0],
+                key=lambda x: x["messages_loaded"],
+                reverse=True
+            )[:5]
+            
+            if top_channels:
+                top_list = "\n".join([
+                    f"**#{ch['channel']}**: {ch['messages_loaded']:,} msgs, {ch['chunks_created']:,} chunks"
+                    for ch in top_channels
+                ])
+                embed.add_field(
+                    name="🏆 Top Channels by Messages",
+                    value=top_list,
+                    inline=False
+                )
+            
+            await status_msg.edit(content="", embed=embed)
+            
+            # Log completion
+            self.logger.info(
+                f"Server load complete: {server_stats['channels_successful']}/{server_stats['total_channels']} "
+                f"channels successful, {server_stats['total_messages_loaded']:,} messages loaded, "
+                f"{server_stats['total_chunks_created']:,} chunks created in {duration:.1f}s"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error in load_server command: {e}", exc_info=True)
+            await ctx.send(f"❌ Error loading server: {e}")
 
     @commands.command(name='check_storage', help='Check message storage statistics for current channel')
     async def check_storage(self, ctx):

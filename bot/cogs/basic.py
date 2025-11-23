@@ -180,7 +180,7 @@ class Basic(commands.Cog):
         
         # Get all commands and filter out admin-only ones
         admin_commands = {
-            'whoami', 'check_blacklist', 'reload_blacklist', 'load_channel',
+            'whoami', 'check_blacklist', 'reload_blacklist', 'load_channel', 'load_server',
             'check_storage', 'checkpoint_info', 'chunk_status', 'reset_chunk_checkpoint',
             'rechunk', 'rag_settings', 'rag_set', 'rag_reset', 'rag_enable_all',
             'compare_rag', 'ai_provider', 'chatbot_mode'
@@ -246,6 +246,7 @@ class Basic(commands.Cog):
             ],
             "Message Loading": [
                 'load_channel',
+                'load_server',
                 'check_storage',
             ],
             "Chunking": [

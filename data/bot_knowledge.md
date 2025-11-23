@@ -51,6 +51,7 @@ Deep-Bot is a Retrieval-Augmented Generation (RAG) Discord bot designed to help 
 - `!check_blacklist` - Check the current blacklist configuration
 - `!reload_blacklist` - Reload the blacklist from environment variables (Admin only)
 - `!load_channel` - Load all messages from current channel into memory (Admin only)
+- `!load_server` - Load all messages from all channels in the server (Admin only, suitable for cronjobs)
 - `!check_storage` - Check message storage statistics for current channel
 - `!checkpoint_info` - Show checkpoint information for current channel
 - `!chunk_status` - Show chunking progress and statistics for current channel
