@@ -69,9 +69,10 @@ htmlcov/
 .tox/
 
 # Documentation
-docs/
+# Note: docs/bot_knowledge.md is needed at runtime, so docs/ is not excluded
 *.md
 !README.md
+!docs/bot_knowledge.md
 
 # Temporary files
 *.tmp
