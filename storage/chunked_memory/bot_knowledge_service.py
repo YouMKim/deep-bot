@@ -36,9 +36,9 @@ class BotKnowledgeService:
         
         # Get path to bot_knowledge.md
         # __file__ is storage/chunked_memory/bot_knowledge_service.py
-        # We want data/bot_knowledge.md relative to project root
+        # We want docs/bot_knowledge.md relative to project root
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        self.bot_knowledge_path = os.path.join(project_root, "data", "bot_knowledge.md")
+        self.bot_knowledge_path = os.path.join(project_root, "docs", "bot_knowledge.md")
 
     def load_bot_documentation(self) -> str:
         """

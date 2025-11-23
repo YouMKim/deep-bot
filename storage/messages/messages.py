@@ -5,7 +5,7 @@ import logging
 from pathlib import Path 
 from typing import List, Dict, Optional
 from datetime import datetime 
-from data.sqlite_storage import SQLiteStorage  # Keep in data/ as it's a shared utility 
+from storage.sqlite_storage import SQLiteStorage 
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS messages (

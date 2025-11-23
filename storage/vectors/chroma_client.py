@@ -158,3 +158,4 @@ class ChromaClient:
 
 # Global instance
 chroma_client = ChromaClient()
+

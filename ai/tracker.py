@@ -1,5 +1,5 @@
 from typing import Dict, Optional, List
-from data.sqlite_storage import SQLiteStorage  # Keep in data/ as it's a shared utility
+from storage.sqlite_storage import SQLiteStorage
 
 
 class UserAITracker(SQLiteStorage):

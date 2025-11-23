@@ -28,7 +28,7 @@ def test_bot_knowledge_file_exists():
     
     bot_knowledge_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
-        "data",
+        "docs",
         "bot_knowledge.md"
     )
     

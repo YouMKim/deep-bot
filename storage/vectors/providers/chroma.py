@@ -1,5 +1,5 @@
 from storage.vectors.base import VectorStorage
-from data.chroma_client import chroma_client
+from storage.vectors.chroma_client import chroma_client
 from typing import List, Dict, Optional
 import logging
 

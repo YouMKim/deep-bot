@@ -11,7 +11,7 @@ import random
 import asyncio
 from typing import Optional, Dict, List
 from contextlib import contextmanager
-from data.sqlite_storage import SQLiteStorage
+from storage.sqlite_storage import SQLiteStorage
 from config import Config
 from .modifiers import get_tone_tier
 
