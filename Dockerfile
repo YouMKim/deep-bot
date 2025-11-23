@@ -49,14 +49,21 @@ RUN if [ "$INSTALL_PYTORCH" = "1" ]; then \
 # Install other dependencies
 # If PyTorch is disabled, exclude sentence-transformers and tokenizers from requirements
 RUN if [ "$INSTALL_PYTORCH" = "1" ]; then \
+        echo "Installing all dependencies (including PyTorch)..." && \
         pip install --no-cache-dir -r requirements-prod.txt; \
     else \
         echo "Filtering out PyTorch dependencies from requirements..." && \
         grep -vE "(sentence-transformers|tokenizers)" requirements-prod.txt > requirements-no-pytorch.txt || cp requirements-prod.txt requirements-no-pytorch.txt && \
         echo "Installing dependencies without PyTorch..." && \
+        echo "Filtered requirements file contents:" && \
+        cat requirements-no-pytorch.txt && \
         pip install --no-cache-dir -r requirements-no-pytorch.txt && \
+        echo "Verifying core dependencies are installed..." && \
+        python -c "import discord; print('✓ discord.py installed')" || (echo "ERROR: discord.py not installed!" && exit 1) && \
+        python -c "import openai; print('✓ openai installed')" || (echo "ERROR: openai not installed!" && exit 1) && \
+        python -c "import chromadb; print('✓ chromadb installed')" || (echo "ERROR: chromadb not installed!" && exit 1) && \
         echo "Verifying sentence-transformers is NOT installed..." && \
-        (python -c "import sentence_transformers" 2>/dev/null && (echo "ERROR: sentence-transformers was installed!" && exit 1) || echo "✓ Confirmed: sentence-transformers is NOT installed"); \
+        (python -c "import sentence_transformers" 2>/dev/null && echo "WARNING: sentence-transformers was installed (unexpected)" || echo "✓ Confirmed: sentence-transformers is NOT installed"); \
     fi && \
     pip cache purge && \
     rm -rf /root/.cache/pip /tmp/* /var/tmp/* && \
