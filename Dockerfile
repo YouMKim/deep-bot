@@ -8,17 +8,19 @@ FROM python:3.12-slim as builder
 # Default: 0 (disabled) for memory optimization
 ARG INSTALL_PYTORCH=0
 
-# Install build dependencies (only if PyTorch is needed)
-RUN if [ "$INSTALL_PYTORCH" = "1" ]; then \
-        apt-get update && apt-get install -y \
-        build-essential \
-        gcc \
-        g++ \
-        curl \
+# Install build dependencies
+# Always needed for chroma-hnswlib (C++ compilation)
+# Rust is only needed if PyTorch is installed (for tokenizers)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    g++ \
+    && if [ "$INSTALL_PYTORCH" = "1" ]; then \
+        apt-get install -y curl \
         && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-        && . $HOME/.cargo/env \
-        && rm -rf /var/lib/apt/lists/*; \
-    fi
+        && . $HOME/.cargo/env; \
+    fi \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
