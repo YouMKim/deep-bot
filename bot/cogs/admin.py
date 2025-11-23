@@ -393,12 +393,24 @@ class Admin(commands.Cog):
                 await ctx.send("❌ This command can only be used in a server.")
                 return
             
-            # Get all text channels
-            text_channels = [ch for ch in guild.text_channels if ch.permissions_for(guild.me).read_message_history]
+            # Get all text channels (excluding the chatbot channel)
+            chatbot_channel_id = self.config.CHATBOT_CHANNEL_ID
+            text_channels = [
+                ch for ch in guild.text_channels 
+                if ch.permissions_for(guild.me).read_message_history
+                and ch.id != chatbot_channel_id
+            ]
             
             if not text_channels:
-                await ctx.send("❌ No accessible text channels found in this server.")
+                await ctx.send("❌ No accessible text channels found in this server (excluding chatbot channel).")
                 return
+            
+            # Log excluded channel if configured
+            excluded_count = 0
+            if chatbot_channel_id and chatbot_channel_id > 0:
+                chatbot_channel = guild.get_channel(chatbot_channel_id)
+                if chatbot_channel:
+                    excluded_count = 1
             
             if limit and limit > 100000:
                 warning = await ctx.send(
@@ -408,8 +420,9 @@ class Admin(commands.Cog):
                 )
             
             # Initial status message
+            excluded_msg = f" (excluding chatbot channel)" if excluded_count > 0 else ""
             status_msg = await ctx.send(
-                f"🔄 Starting server-wide load: {len(text_channels)} channels to process...\n"
+                f"🔄 Starting server-wide load: {len(text_channels)} channels to process{excluded_msg}...\n"
                 f"This may take a while. Progress will be updated periodically."
             )
             
@@ -527,9 +540,15 @@ class Admin(commands.Cog):
             duration = (server_stats["end_time"] - server_stats["start_time"]).total_seconds()
             
             # Create summary embed
+            description = f"Processed {len(text_channels)} channels in {guild.name}"
+            if excluded_count > 0:
+                chatbot_channel = guild.get_channel(chatbot_channel_id)
+                if chatbot_channel:
+                    description += f"\n⚠️ Excluded chatbot channel: #{chatbot_channel.name}"
+            
             embed = discord.Embed(
                 title="📥 Server Loading Complete",
-                description=f"Processed {len(text_channels)} channels in {guild.name}",
+                description=description,
                 color=discord.Color.green() if server_stats["channels_failed"] == 0 else discord.Color.orange()
             )
             

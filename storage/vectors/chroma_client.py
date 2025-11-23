@@ -21,6 +21,11 @@ class ChromaClient:
         import os
         import shutil
         
+        # Suppress ChromaDB telemetry errors (harmless PostHog compatibility issues)
+        # These errors don't affect functionality but clutter logs
+        telemetry_logger = logging.getLogger("chromadb.telemetry")
+        telemetry_logger.setLevel(logging.CRITICAL)  # Only show critical telemetry errors
+        
         data_dir = Path("data")
         data_dir.mkdir(exist_ok=True)
         chroma_path = Path("data/chroma_db")
@@ -38,6 +43,7 @@ class ChromaClient:
         for attempt in range(max_retries):
             try:
                 # Initialize ChromaDB client with explicit settings to avoid compatibility issues
+                # Disable telemetry to prevent PostHog errors
                 self._client = chromadb.PersistentClient(
                     path=str(chroma_path),
                     settings=chromadb.Settings(anonymized_telemetry=False)
@@ -79,6 +85,7 @@ class ChromaClient:
                             continue
                         else:
                             # Final attempt - recreate client
+                            # Disable telemetry to prevent PostHog errors
                             self._client = chromadb.PersistentClient(
                                 path=str(chroma_path),
                                 settings=chromadb.Settings(anonymized_telemetry=False)
