@@ -6,6 +6,8 @@ This is the entry point for your Discord bot.
 import asyncio
 import logging
 import sys
+import os
+from pathlib import Path
 import discord
 from discord.ext import commands
 from discord.ext.commands import (
@@ -33,6 +35,15 @@ logging.basicConfig(
     handlers=log_handlers,
 )
 logger = logging.getLogger(__name__)
+
+# Ensure data directory is a Python package (needed when volume is mounted)
+# This fixes the issue where volume mounts replace the directory and remove __init__.py
+data_dir = Path("data")
+data_init_file = data_dir / "__init__.py"
+if not data_init_file.exists():
+    data_dir.mkdir(parents=True, exist_ok=True)
+    data_init_file.write_text('"""Data storage module for the Discord bot."""\n')
+    logger.info("Created data/__init__.py (required for volume mounts)")
 
 
 class DeepBot(commands.Bot):
