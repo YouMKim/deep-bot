@@ -142,6 +142,9 @@ Guidelines:
     EVALUATE_TEMPERATURE: float = float(os.getenv("EVALUATE_TEMPERATURE", "0.3"))
     EVALUATE_PROVIDER: Optional[str] = os.getenv("EVALUATE_PROVIDER")  # Defaults to AI_DEFAULT_PROVIDER if None
 
+    # Snapshot Configuration
+    SNAPSHOT_CHANNEL_ID: int = int(os.getenv("SNAPSHOT_CHANNEL_ID", "0"))  # Channel to post snapshots to
+
     @classmethod
     def load_blacklist(cls):
         """Load blacklisted user IDs from environment variable."""

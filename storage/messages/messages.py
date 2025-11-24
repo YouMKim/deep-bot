@@ -508,3 +508,70 @@ class MessageStorage(SQLiteStorage):
                 conn.rollback()
                 self.logger.error(f"Failed to delete chunking checkpoint: {e}")
                 raise
+
+    def get_messages_by_date_range(
+        self,
+        channel_id: str,
+        start_date: str,
+        end_date: str,
+        limit: Optional[int] = None
+    ) -> List[Dict]:
+        """
+        Get messages within a date range for a specific channel.
+        
+        Args:
+            channel_id: Channel ID to fetch from
+            start_date: Start date (ISO format timestamp string)
+            end_date: End date (ISO format timestamp string)
+            limit: Maximum number of messages to return (None for all)
+            
+        Returns:
+            List of message dictionaries, ordered oldest to newest
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            if limit:
+                cursor.execute("""
+                    SELECT message_id, channel_id, guild_id, content,
+                        author_id, author_name, author_display_name,
+                        channel_name, guild_name, timestamp, created_at,
+                        is_bot, has_attachments, message_type, metadata
+                    FROM messages
+                    WHERE channel_id = ? AND timestamp >= ? AND timestamp <= ?
+                    ORDER BY timestamp ASC
+                    LIMIT ?
+                """, (str(channel_id), start_date, end_date, limit))
+            else:
+                cursor.execute("""
+                    SELECT message_id, channel_id, guild_id, content,
+                        author_id, author_name, author_display_name,
+                        channel_name, guild_name, timestamp, created_at,
+                        is_bot, has_attachments, message_type, metadata
+                    FROM messages
+                    WHERE channel_id = ? AND timestamp >= ? AND timestamp <= ?
+                    ORDER BY timestamp ASC
+                """, (str(channel_id), start_date, end_date))
+            
+            rows = cursor.fetchall()
+            messages = []
+            for row in rows:
+                messages.append({
+                    'message_id': row[0],
+                    'channel_id': row[1],
+                    'guild_id': row[2],
+                    'content': row[3],
+                    'author_id': row[4],
+                    'author_name': row[5],
+                    'author_display_name': row[6],
+                    'channel_name': row[7],
+                    'guild_name': row[8],
+                    'timestamp': row[9],
+                    'created_at': row[10],
+                    'is_bot': bool(row[11]),
+                    'has_attachments': bool(row[12]),
+                    'message_type': row[13],
+                    'metadata': json.loads(row[14]) if row[14] else {}
+                })
+            
+            return messages

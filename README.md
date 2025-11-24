@@ -307,6 +307,9 @@ Deep-Bot is highly configurable via environment variables:
 - `CHATBOT_CHAT_MAX_TOKENS`: Max tokens for chat responses
 - `CHATBOT_RAG_MAX_TOKENS`: Max tokens for RAG responses
 
+### Cronjob Configuration
+- `SNAPSHOT_CHANNEL_ID`: Channel ID where snapshot messages will be posted (optional)
+
 ## 🚀 Quick Start
 
 ```bash
@@ -402,6 +405,50 @@ Simply send messages in the configured chatbot channel. The bot will:
 - **Performance Metrics**: Latency tracking for all operations
 - **Error Tracking**: Comprehensive error logging with stack traces
 
+
+## ⏰ Cronjob Setup (Railway)
+
+Deep-Bot includes a cronjob script that runs two tasks:
+
+1. **Load Server**: Loads all messages not yet ingested from Discord and processes them through the chunking pipeline
+2. **Snapshot**: Posts 5 messages from 1, 2, 3, 4, and 5 years ago on the current day to a configured channel
+
+### Setting up the Cronjob on Railway
+
+1. **Create a new service** in your Railway project:
+   - Go to your Railway project dashboard
+   - Click "New" → "Service"
+   - Select "GitHub Repo" and choose your repository
+
+2. **Configure the service**:
+   - Use the same Dockerfile as your main bot service
+   - Set the start command to: `python scripts/cronjob.py`
+   - Configure the cron schedule (e.g., `0 2 * * *` for daily at 2 AM UTC)
+
+3. **Set environment variables**:
+   - Copy all environment variables from your main bot service
+   - Ensure `SNAPSHOT_CHANNEL_ID` is set if you want snapshot functionality
+
+4. **Deploy**:
+   - Railway will automatically run the cronjob according to the schedule
+   - Check logs to verify it's running correctly
+
+### Cronjob Features
+
+- **Load Server**: Automatically processes all channels, loading new messages and creating chunks
+- **Snapshot**: Finds and posts historical messages from years past (skips if not found)
+- **Error Handling**: Gracefully handles errors and continues processing
+- **Logging**: Comprehensive logging for monitoring and debugging
+
+### Manual Testing
+
+You can test the cronjob script locally:
+
+```bash
+python scripts/cronjob.py
+```
+
+This will run both tasks and exit when complete.
 
 ## 📄 License
 
