@@ -6,6 +6,7 @@ This is the entry point for your Discord bot.
 import asyncio
 import logging
 import sys
+from datetime import datetime, time, timezone
 import discord
 from discord.ext import commands
 from discord.ext.commands import (
@@ -15,6 +16,7 @@ from discord.ext.commands import (
     CommandOnCooldown,
 )
 from config import Config
+from bot.cronjob_tasks import CronjobTasks
 
 # Set up logging
 # In Railway/Docker, file logging may not persist, so we primarily use stdout
@@ -52,6 +54,8 @@ class DeepBot(commands.Bot):
             help_command=None,  # Disable default help command, we'll use custom one
         )
         self.debug_mode = Config.DEBUG_MODE
+        self.cronjob_tasks = None
+        self.cronjob_task = None
 
     async def on_ready(self):
         """Called when the bot is ready."""
@@ -64,6 +68,78 @@ class DeepBot(commands.Bot):
             type=discord.ActivityType.listening, name=f"{Config.BOT_PREFIX}help"
         )
         await self.change_presence(activity=activity)
+        
+        # Start cronjob scheduler if enabled and not already running
+        if Config.CRONJOB_ENABLED:
+            if self.cronjob_task is None or self.cronjob_task.done():
+                self.cronjob_tasks = CronjobTasks(self)
+                self.cronjob_task = asyncio.create_task(self._cronjob_scheduler())
+                logger.info(f"Started cronjob scheduler (runs daily at {Config.CRONJOB_SCHEDULE_TIME} UTC)")
+        else:
+            logger.info("Cronjob scheduler is disabled (set CRONJOB_ENABLED=true to enable)")
+
+    async def _cronjob_scheduler(self):
+        """Background task that runs cronjob tasks daily at configured time (UTC)."""
+        await self.wait_until_ready()
+        
+        # Parse schedule time from config (format: "HH:MM" or "H:MM")
+        schedule_time_str = Config.CRONJOB_SCHEDULE_TIME
+        try:
+            # Parse time string (e.g., "06:00" or "6:00")
+            time_parts = schedule_time_str.split(":")
+            if len(time_parts) != 2:
+                raise ValueError(f"Invalid time format: {schedule_time_str}")
+            hour = int(time_parts[0])
+            minute = int(time_parts[1])
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError(f"Invalid time: hour must be 0-23, minute must be 0-59")
+            target_time = time(hour, minute, 0)
+        except (ValueError, IndexError) as e:
+            logger.error(f"Invalid CRONJOB_SCHEDULE_TIME format '{schedule_time_str}'. Expected HH:MM (e.g., '14:00'). Using default 14:00 (6 AM Pacific). Error: {e}")
+            target_time = time(14, 0, 0)  # Default to 14:00 UTC (6 AM Pacific)
+        
+        while not self.is_closed():
+            try:
+                # Calculate next run time
+                now = datetime.now(timezone.utc)
+                
+                # If it's already past 6 AM today, schedule for tomorrow
+                if now.time() >= target_time:
+                    # Schedule for tomorrow
+                    from datetime import timedelta
+                    next_run = datetime.combine(
+                        (now + timedelta(days=1)).date(), target_time, timezone.utc
+                    )
+                else:
+                    next_run = datetime.combine(
+                        now.date(), target_time, timezone.utc
+                    )
+                
+                # Calculate seconds until next run
+                wait_seconds = (next_run - now).total_seconds()
+                
+                logger.info(
+                    f"Cronjob scheduler: Next run in {wait_seconds/3600:.1f} hours "
+                    f"({next_run.strftime('%Y-%m-%d %H:%M:%S UTC')})"
+                )
+                
+                # Wait until next run time
+                await asyncio.sleep(wait_seconds)
+                
+                # Run cronjob tasks
+                logger.info("Running scheduled cronjob tasks...")
+                try:
+                    await self.cronjob_tasks.run_all_tasks()
+                except Exception as e:
+                    logger.error(f"Error running cronjob tasks: {e}", exc_info=True)
+                
+            except asyncio.CancelledError:
+                logger.info("Cronjob scheduler cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in cronjob scheduler: {e}", exc_info=True)
+                # Wait 1 hour before retrying on error
+                await asyncio.sleep(3600)
 
     async def on_command_error(self, ctx, error):
         """Handle command errors."""

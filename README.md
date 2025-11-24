@@ -309,6 +309,8 @@ Deep-Bot is highly configurable via environment variables:
 
 ### Cronjob Configuration
 - `SNAPSHOT_CHANNEL_ID`: Channel ID where snapshot messages will be posted (optional)
+- `CRONJOB_SCHEDULE_TIME`: Time to run cronjob daily in UTC (format: `HH:MM`, default: `14:00` which is 6 AM Pacific)
+- `CRONJOB_ENABLED`: Enable/disable cronjob scheduler (default: `true`)
 
 ## 🚀 Quick Start
 
@@ -406,32 +408,43 @@ Simply send messages in the configured chatbot channel. The bot will:
 - **Error Tracking**: Comprehensive error logging with stack traces
 
 
-## ⏰ Cronjob Setup (Railway)
+## ⏰ Cronjob Setup
 
-Deep-Bot includes a cronjob script that runs two tasks:
+Deep-Bot includes a built-in cronjob scheduler that runs two tasks automatically:
 
 1. **Load Server**: Loads all messages not yet ingested from Discord and processes them through the chunking pipeline
 2. **Snapshot**: Posts 5 messages from 1, 2, 3, 4, and 5 years ago on the current day to a configured channel
 
-### Setting up the Cronjob on Railway
+### Setting up the Cronjob
 
-1. **Create a new service** in your Railway project:
-   - Go to your Railway project dashboard
-   - Click "New" → "Service"
-   - Select "GitHub Repo" and choose your repository
+The cronjob runs as a **background task** within your bot service - no separate service needed!
 
-2. **Configure the service**:
-   - Use the same Dockerfile as your main bot service
-   - Set the start command to: `python scripts/cronjob.py`
-   - Configure the cron schedule (e.g., `0 2 * * *` for daily at 2 AM UTC)
+1. **Configure environment variables** (in Railway or `.env`):
+   - `CRONJOB_ENABLED=true` (default: enabled)
+   - `CRONJOB_SCHEDULE_TIME=06:00` (default: 6 AM UTC, format: `HH:MM`)
+   - `SNAPSHOT_CHANNEL_ID=<channel_id>` (optional, for snapshot feature)
 
-3. **Set environment variables**:
-   - Copy all environment variables from your main bot service
-   - Ensure `SNAPSHOT_CHANNEL_ID` is set if you want snapshot functionality
+2. **How it works**:
+   - The bot starts normally and runs continuously
+   - A background scheduler runs cronjob tasks daily at the configured time
+   - Tasks run automatically without needing Railway's cron feature
+   - All in one service - no separate deployments needed!
 
-4. **Deploy**:
-   - Railway will automatically run the cronjob according to the schedule
-   - Check logs to verify it's running correctly
+3. **Schedule Examples**:
+   ```
+   CRONJOB_SCHEDULE_TIME=14:00    # 6 AM Pacific / 2 PM UTC (default)
+   CRONJOB_SCHEDULE_TIME=06:00    # 6 AM UTC
+   CRONJOB_SCHEDULE_TIME=12:05    # 12:05 PM UTC
+   CRONJOB_SCHEDULE_TIME=00:00    # Midnight UTC
+   ```
+
+4. **Disable cronjob**:
+   - Set `CRONJOB_ENABLED=false` to disable the scheduler
+   - The bot will run normally without cronjob tasks
+
+5. **Deploy**:
+   - Just deploy your bot normally - the cronjob scheduler starts automatically
+   - Check logs to see when the next cronjob run is scheduled
 
 ### Cronjob Features
 
