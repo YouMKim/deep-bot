@@ -413,7 +413,7 @@ Simply send messages in the configured chatbot channel. The bot will:
 Deep-Bot includes a built-in cronjob scheduler that runs two tasks automatically:
 
 1. **Load Server**: Loads all messages not yet ingested from Discord and processes them through the chunking pipeline
-2. **Snapshot**: Posts 5 messages from 1, 2, 3, 4, and 5 years ago on the current day to a configured channel
+2. **Snapshot**: Posts 1 random message from 1, 2, 3, 4, and 5 years ago on the current day to a configured channel
 
 ### Setting up the Cronjob
 

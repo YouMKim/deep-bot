@@ -3,6 +3,7 @@ Cronjob tasks that run as background tasks in the bot.
 """
 
 import logging
+import random
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -152,7 +153,7 @@ class CronjobTasks:
                                 channel_id=str(channel.id),
                                 start_date=start_date.isoformat(),
                                 end_date=end_date.isoformat(),
-                                limit=10  # Get more messages per channel to have options
+                                limit=10  # Get messages for random selection
                             )
                             
                             # Filter out bot messages and empty messages
@@ -162,22 +163,20 @@ class CronjobTasks:
                                         **msg,
                                         'channel_name': channel.name
                                     })
-                            
-                            # If we found enough messages, stop searching channels
-                            if len(found_messages) >= 5:
-                                break
                         except Exception as e:
                             self.logger.warning(f"Error searching channel #{channel.name}: {e}")
                             continue
                     
-                    # Take up to 5 messages (or all if less than 5)
+                    # Pick 1 random message (or all if less than 1)
                     if found_messages:
+                        # Randomly select 1 message
+                        selected_message = random.choice(found_messages)
                         snapshot_messages.append({
                             'years_ago': years_ago,
                             'date': target_date,
-                            'messages': found_messages[:5]
+                            'messages': [selected_message]
                         })
-                        self.logger.info(f"Found {len(found_messages[:5])} message(s) from {years_ago} year(s) ago")
+                        self.logger.info(f"Found and selected 1 random message from {years_ago} year(s) ago")
                     else:
                         self.logger.info(f"No messages found from {years_ago} year(s) ago - skipping")
                         
@@ -218,24 +217,24 @@ class CronjobTasks:
                 if not messages:
                     continue
                 
-                # Format messages for this year
-                message_texts = []
-                for msg in messages:
-                    author = msg.get('author_display_name') or msg.get('author_name', 'Unknown')
-                    content = msg.get('content', '')[:200]  # Limit length
-                    channel_name = msg.get('channel_name', 'unknown')
-                    message_texts.append(f"**{author}** in #{channel_name}: {content}")
+                # Format the single message for this year
+                msg = messages[0]  # Only one message now
+                author = msg.get('author_display_name') or msg.get('author_name', 'Unknown')
+                content = msg.get('content', '')
+                channel_name = msg.get('channel_name', 'unknown')
                 
-                if message_texts:
-                    field_value = "\n".join(message_texts)
-                    if len(field_value) > 1024:  # Discord embed field limit
-                        field_value = field_value[:1021] + "..."
-                    
-                    embed.add_field(
-                        name=f"{years_ago} year{'s' if years_ago > 1 else ''} ago ({date.strftime('%B %d, %Y')})",
-                        value=field_value,
-                        inline=False
-                    )
+                # Format the message
+                field_value = f"**{author}** in #{channel_name}:\n{content}"
+                
+                # Truncate if too long (Discord embed field limit is 1024 chars)
+                if len(field_value) > 1024:
+                    field_value = field_value[:1021] + "..."
+                
+                embed.add_field(
+                    name=f"{years_ago} year{'s' if years_ago > 1 else ''} ago ({date.strftime('%B %d, %Y')})",
+                    value=field_value,
+                    inline=False
+                )
             
             if embed.fields:
                 await channel.send(embed=embed)

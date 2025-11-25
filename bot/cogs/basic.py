@@ -625,6 +625,37 @@ Search the web for relevant information, cite your sources with URLs, and provid
             # Extract ratings
             truthfulness, evidence_alignment = self._extract_ratings(evaluation_text)
             
+            # Apply social credit penalty if claim is false
+            if truthfulness is not None and truthfulness < 40 and Config.SOCIAL_CREDIT_ENABLED:
+                try:
+                    from ai.social_credit import SocialCreditManager
+                    sc_manager = SocialCreditManager()
+                    
+                    # Get the author of the evaluated message (not the evaluator)
+                    evaluated_user_id = str(replied_message.author.id)
+                    evaluated_user_name = replied_message.author.display_name
+                    
+                    # Apply -50 penalty for spreading misinformation
+                    new_score = await sc_manager.update_score(
+                        evaluated_user_id,
+                        -50,
+                        "spreading_misinformation",
+                        evaluated_user_name
+                    )
+                    
+                    # Announce the penalty with emojis
+                    penalty_message = (
+                        f"🚨 **SPREADING MISINFORMATION??** 🚨\n"
+                        f"{replied_message.author.mention} **-50 SOCIAL CREDIT SCORE**\n"
+                        f"New score: **{new_score}**"
+                    )
+                    await ctx.send(penalty_message)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error applying social credit penalty: {e}", exc_info=True)
+                    # Continue with evaluation even if penalty fails
+            
             # Extract URLs (limit to top 3) BEFORE removing them from text
             urls = self._extract_urls(evaluation_text)[:3]
             
