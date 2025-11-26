@@ -55,23 +55,10 @@ class Chatbot(commands.Cog):
         try:
             self.rag_pipeline = RAGPipeline(config=self.config, ai_service=self.ai_service)
         except (KeyError, AttributeError, TypeError, RuntimeError) as e:
-            error_str = str(e).lower()
-            # Check for various frozenset-related errors:
-            is_frozenset_error = (
-                "frozenset" in error_str or
-                (isinstance(e, KeyError) and (not str(e) or str(e) == "frozenset()")) or
-                (isinstance(e, TypeError) and "frozenset" in error_str) or
-                "chromadb" in error_str
-            )
-            if is_frozenset_error:
-                logger.error(
-                    f"ChromaDB compatibility issue detected ({type(e).__name__}: {e}). "
-                    "Set RESET_CHROMADB=true in environment variables to fix this."
-                )
-                raise RuntimeError(
-                    "ChromaDB initialization failed. Set RESET_CHROMADB=true in your environment variables "
-                    "and redeploy. This will clear the ChromaDB database and allow it to be recreated."
-                ) from e
+            from storage.utils import handle_chromadb_init_error
+            is_chromadb_error, runtime_error = handle_chromadb_init_error(e, "Chatbot initialization")
+            if is_chromadb_error:
+                raise runtime_error
             raise
         
         self.ai_tracker = UserAITracker()
@@ -707,13 +694,16 @@ class Chatbot(commands.Cog):
             )
             
             # Generate response with conversational token limit (shorter for chat)
+            # Add response variety for more engaging conversations
             result = await self.ai_service.generate(
                 prompt=prompt,
                 max_tokens=self.config.CHATBOT_CHAT_MAX_TOKENS,
                 temperature=self.config.CHATBOT_TEMPERATURE,
                 user_id=user_id,
                 user_display_name=author_name,
-                system_prompt=self.config.CHATBOT_SYSTEM_PROMPT
+                system_prompt=self.config.CHATBOT_SYSTEM_PROMPT,
+                personality_mode="friendly",  # Default friendly personality
+                add_variety=True  # Enable response variety
             )
             
             # If response is long, try to summarize it for more conversational feel

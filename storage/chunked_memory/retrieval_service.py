@@ -3,13 +3,16 @@ Retrieval service for chunked memory.
 
 Handles vector search and hybrid search orchestration.
 """
+import asyncio
 import logging
 from typing import Dict, List, Optional, TYPE_CHECKING
 from storage.vectors.base import VectorStorage
 from embedding.base import EmbeddingBase
 from chunking.constants import ChunkStrategy
+from rag.hybrid_search import HybridSearchService
 from .author_filter import AuthorFilter
 from .bm25_service import BM25Service
+from .embedding_service import EmbeddingService
 from .utils import get_collection_name, resolve_strategy, calculate_fetch_k
 
 if TYPE_CHECKING:
@@ -25,7 +28,8 @@ class RetrievalService:
         embedder: EmbeddingBase,
         author_filter: AuthorFilter,
         bm25_service: BM25Service,
-        config: Optional['Config'] = None
+        config: Optional['Config'] = None,
+        embedding_service: Optional[EmbeddingService] = None
     ):
         """
         Initialize RetrievalService.
@@ -36,6 +40,7 @@ class RetrievalService:
             author_filter: AuthorFilter instance for filtering
             bm25_service: BM25Service instance for hybrid search
             config: Configuration instance (defaults to Config class)
+            embedding_service: Optional EmbeddingService for cached embeddings
         """
         from config import Config as ConfigClass
         
@@ -45,6 +50,12 @@ class RetrievalService:
         self.bm25_service = bm25_service
         self.config = config or ConfigClass
         self.logger = logging.getLogger(__name__)
+        
+        # Use provided embedding service or create one for caching
+        self.embedding_service = embedding_service or EmbeddingService(embedder, self.config)
+        
+        # Reuse HybridSearchService instance instead of creating per-search
+        self._hybrid_service = HybridSearchService()
 
     async def search(
         self,
@@ -73,10 +84,8 @@ class RetrievalService:
         collection_name = get_collection_name(strategy_value)
 
         try:
-            # Run embedding in executor to avoid blocking event loop
-            import asyncio
-            loop = asyncio.get_event_loop()
-            query_embedding = await loop.run_in_executor(None, self.embedder.encode, query)
+            # Use cached embedding (runs in executor to avoid blocking)
+            query_embedding = await self.embedding_service.encode_query_cached_async(query)
         except Exception as exc:
             self.logger.error("Failed to generate query embedding: %s", exc)
             raise
@@ -173,6 +182,8 @@ class RetrievalService:
         """
         Hybrid search combining BM25 and vector similarity.
 
+        Runs BM25 and vector search in PARALLEL for better performance.
+
         Args:
             query: Search query
             strategy: Optional strategy override
@@ -186,13 +197,26 @@ class RetrievalService:
         Returns:
             Fused results from both search methods
         """
-        from rag.hybrid_search import HybridSearchService
-
         # Retrieve more candidates from each method (for fusion deduplication)
         fetch_k = calculate_fetch_k(top_k, needs_filtering=False, needs_reranking=False)
 
-        # BM25 search
-        bm25_results = self.bm25_service.search(
+        # Run BM25 and vector search in PARALLEL
+        # BM25 is synchronous, so run it in executor
+        loop = asyncio.get_event_loop()
+        bm25_task = loop.run_in_executor(
+            None,
+            lambda: self.bm25_service.search(
+                query=query,
+                strategy=strategy,
+                active_strategy=active_strategy,
+                top_k=fetch_k,
+                exclude_blacklisted=exclude_blacklisted,
+                filter_authors=filter_authors
+            )
+        )
+
+        # Vector search is async
+        vector_task = self.search(
             query=query,
             strategy=strategy,
             active_strategy=active_strategy,
@@ -201,19 +225,11 @@ class RetrievalService:
             filter_authors=filter_authors
         )
 
-        # Vector search
-        vector_results = await self.search(
-            query=query,
-            strategy=strategy,
-            active_strategy=active_strategy,
-            top_k=fetch_k,
-            exclude_blacklisted=exclude_blacklisted,
-            filter_authors=filter_authors
-        )
+        # Wait for both to complete in parallel
+        bm25_results, vector_results = await asyncio.gather(bm25_task, vector_task)
 
-        # Fuse results
-        hybrid_service = HybridSearchService()
-        fused_results = hybrid_service.hybrid_search(
+        # Fuse results using reusable service instance
+        fused_results = self._hybrid_service.hybrid_search(
             query=query,
             bm25_results=bm25_results,
             vector_results=vector_results,

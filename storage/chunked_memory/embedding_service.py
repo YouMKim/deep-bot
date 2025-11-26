@@ -5,7 +5,8 @@ Handles document embedding with fallback and batching support.
 """
 import logging
 import asyncio
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
+from collections import OrderedDict
+from typing import List, Optional, Dict, Any, Tuple, TYPE_CHECKING
 from embedding.base import EmbeddingBase
 
 if TYPE_CHECKING:
@@ -13,7 +14,10 @@ if TYPE_CHECKING:
 
 
 class EmbeddingService:
-    """Service for embedding documents with error recovery and batching."""
+    """Service for embedding documents with error recovery, batching, and caching."""
+
+    # Class-level cache settings
+    QUERY_CACHE_SIZE = 500  # Max number of query embeddings to cache
 
     def __init__(
         self,
@@ -36,6 +40,82 @@ class EmbeddingService:
         # Embedding failure tracking
         self._embedding_failure_count = 0
         self._embedding_success_count = 0
+        
+        # LRU cache for query embeddings (queries are repeated frequently)
+        self._query_cache: OrderedDict[str, List[float]] = OrderedDict()
+        self._cache_hits = 0
+        self._cache_misses = 0
+
+    def encode_query_cached(self, query: str) -> List[float]:
+        """
+        Encode a query with LRU caching.
+        
+        Query embeddings are frequently repeated (same questions, multi-query
+        variations, etc.), so caching them provides significant speedup.
+        
+        Args:
+            query: Query text to embed
+            
+        Returns:
+            Embedding vector for the query
+        """
+        # Check cache first
+        if query in self._query_cache:
+            # Move to end (most recently used) for LRU
+            self._query_cache.move_to_end(query)
+            self._cache_hits += 1
+            self.logger.debug(f"Query embedding cache hit (hits: {self._cache_hits})")
+            return self._query_cache[query]
+        
+        # Cache miss - compute embedding
+        self._cache_misses += 1
+        embedding = self.embedder.encode(query)
+        
+        # Add to cache
+        self._query_cache[query] = embedding
+        
+        # Evict oldest if over limit
+        if len(self._query_cache) > self.QUERY_CACHE_SIZE:
+            self._query_cache.popitem(last=False)
+        
+        return embedding
+    
+    async def encode_query_cached_async(self, query: str) -> List[float]:
+        """
+        Async version of encode_query_cached.
+        
+        Runs the embedding in an executor to avoid blocking the event loop.
+        
+        Args:
+            query: Query text to embed
+            
+        Returns:
+            Embedding vector for the query
+        """
+        # Check cache first (no need for executor)
+        if query in self._query_cache:
+            self._query_cache.move_to_end(query)
+            self._cache_hits += 1
+            return self._query_cache[query]
+        
+        # Cache miss - compute in executor
+        self._cache_misses += 1
+        loop = asyncio.get_event_loop()
+        embedding = await loop.run_in_executor(None, self.embedder.encode, query)
+        
+        # Add to cache
+        self._query_cache[query] = embedding
+        
+        # Evict oldest if over limit
+        if len(self._query_cache) > self.QUERY_CACHE_SIZE:
+            self._query_cache.popitem(last=False)
+        
+        return embedding
+    
+    def clear_query_cache(self) -> None:
+        """Clear the query embedding cache."""
+        self._query_cache.clear()
+        self.logger.info("Query embedding cache cleared")
 
     def embed_with_fallback(
         self,
@@ -188,12 +268,18 @@ class EmbeddingService:
         return all_embeddings
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get embedding success/failure statistics."""
+        """Get embedding success/failure and cache statistics."""
         total = self._embedding_success_count + self._embedding_failure_count
+        cache_total = self._cache_hits + self._cache_misses
         return {
             'total_embedded': total,
             'successful': self._embedding_success_count,
             'failed': self._embedding_failure_count,
-            'success_rate': self._embedding_success_count / total if total > 0 else 0.0
+            'success_rate': self._embedding_success_count / total if total > 0 else 0.0,
+            # Cache statistics
+            'cache_size': len(self._query_cache),
+            'cache_hits': self._cache_hits,
+            'cache_misses': self._cache_misses,
+            'cache_hit_rate': self._cache_hits / cache_total if cache_total > 0 else 0.0
         }
 

@@ -98,21 +98,9 @@ class ChunkedMemoryService:
         try:
             _ = self.vector_store.list_collections()
         except (KeyError, AttributeError, TypeError) as e:
-            error_str = str(e).lower()
-            # Check for various frozenset-related errors:
-            # 1. KeyError with "frozenset" in message
-            # 2. KeyError with empty message (frozenset() representation)
-            # 3. TypeError from frozenset metadata issues
-            is_frozenset_error = (
-                "frozenset" in error_str or
-                (isinstance(e, KeyError) and (not str(e) or str(e) == "frozenset()")) or
-                (isinstance(e, TypeError) and "frozenset" in error_str)
-            )
-            if is_frozenset_error:
-                self.logger.warning(
-                    f"ChromaDB compatibility issue detected ({type(e).__name__}: {e}). "
-                    "This may be due to corrupted metadata. Collections will be recreated as needed."
-                )
+            from storage.utils import is_chromadb_compatibility_error, log_chromadb_warning
+            if is_chromadb_compatibility_error(e):
+                log_chromadb_warning(e, "ChunkedMemoryService initialization")
             else:
                 raise
 
@@ -132,7 +120,8 @@ class ChunkedMemoryService:
             embedder=self.embedder,
             author_filter=self.author_filter,
             bm25_service=self.bm25_service,
-            config=self.config
+            config=self.config,
+            embedding_service=self.embedding_service
         )
         self.ingestion_service = IngestionService(
             vector_store=self.vector_store,

@@ -10,12 +10,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-try:
-    import tiktoken
-    TIKTOKEN_AVAILABLE = True
-except ImportError:
-    TIKTOKEN_AVAILABLE = False
-    logging.warning("tiktoken not available, using fallback token estimation")
+from bot.utils.tokenizer import count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +41,6 @@ class SessionManager:
         self.sessions: Dict[int, Dict] = {}  # channel_id -> session
         self._locks: Dict[int, asyncio.Lock] = {}  # channel_id -> lock
         self._lock = asyncio.Lock()
-        
-        # Initialize tiktoken encoder if available
-        self._tokenizer = None
-        if TIKTOKEN_AVAILABLE:
-            try:
-                self._tokenizer = tiktoken.get_encoding("cl100k_base")
-            except Exception as e:
-                logger.warning(f"Failed to initialize tiktoken: {e}")
-                self._tokenizer = None
     
     async def _get_lock(self, channel_id: int) -> asyncio.Lock:
         """Get or create lock for a channel."""
@@ -167,7 +153,7 @@ class SessionManager:
     
     def _count_tokens(self, text: str) -> int:
         """
-        Count tokens in text using tiktoken if available, fallback to heuristic.
+        Count tokens in text using shared tokenizer utility.
         
         Args:
             text: Text to count tokens for
@@ -175,14 +161,7 @@ class SessionManager:
         Returns:
             Number of tokens
         """
-        if self._tokenizer:
-            try:
-                return len(self._tokenizer.encode(text))
-            except Exception as e:
-                logger.warning(f"Token counting failed: {e}, using fallback")
-        
-        # Fallback: rough estimation (~4 characters per token)
-        return len(text) // 4
+        return count_tokens(text)
     
     def _trim_history_by_tokens(self, messages: List[Dict], max_tokens: int) -> List[Dict]:
         """

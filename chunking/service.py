@@ -2,8 +2,8 @@ from typing import List, Dict, Optional, TYPE_CHECKING
 from datetime import datetime
 import logging
 import re
-import tiktoken
 from chunking.base import Chunk
+from bot.utils.tokenizer import count_tokens as shared_count_tokens
 
 if TYPE_CHECKING:
     from config import Config
@@ -41,9 +41,7 @@ class ChunkingService:
         self.logger = logging.getLogger(__name__)
         self.config = config or ConfigClass
         self.temporal_window = temporal_window or self.config.CHUNKING_TEMPORAL_WINDOW
-        self.conversation_gap = conversation_gap or self.config.CHUNKING_CONVERSATION_GAP
-
-        self._tokenizer = None 
+        self.conversation_gap = conversation_gap or self.config.CHUNKING_CONVERSATION_GAP 
 
     def _validate_messages(self, messages: List[Dict]) -> bool:
         if not isinstance(messages, list):
@@ -57,14 +55,18 @@ class ChunkingService:
             raise ValueError(f"Message must be a list of dictionaries, got {type(sample)}")
         return True 
 
-    def count_tokens(self, text: str, model: str = "cl100k_base") -> int: 
-        try:
-            if self._tokenizer is None:
-                self._tokenizer = tiktoken.get_encoding(model)
-            return len(self._tokenizer.encode(text))
-        except Exception as e:
-            self.logger.warning(f"Token counting failed, error: {e}. Using fallback estimate")
-            return len(text) // 4
+    def count_tokens(self, text: str, model: str = "cl100k_base") -> int:
+        """
+        Count tokens in text using shared tokenizer utility.
+        
+        Args:
+            text: Text to count tokens for
+            model: Encoding model (kept for API compatibility, ignored)
+            
+        Returns:
+            Number of tokens
+        """
+        return shared_count_tokens(text)
 
     def chunk_messages(
         self,

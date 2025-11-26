@@ -31,22 +31,11 @@ class RAG(commands.Cog):
         Returns:
             RAGConfig instance with defaults applied
         """
-        config_dict = {
-            'top_k': self.config.RAG_DEFAULT_TOP_K,
-            'similarity_threshold': self.config.RAG_DEFAULT_SIMILARITY_THRESHOLD,
-            'max_context_tokens': self.config.RAG_DEFAULT_MAX_CONTEXT_TOKENS,
-            'temperature': self.config.RAG_DEFAULT_TEMPERATURE,
-            'strategy': self.config.RAG_DEFAULT_STRATEGY,
-            'filter_authors': filter_authors,
-            'use_hybrid_search': self.config.RAG_USE_HYBRID_SEARCH,
-            'use_multi_query': self.config.RAG_USE_MULTI_QUERY,
-            'use_hyde': self.config.RAG_USE_HYDE,
-            'use_reranking': self.config.RAG_USE_RERANKING,
-            'max_output_tokens': self.config.RAG_MAX_OUTPUT_TOKENS,
-        }
-        # Override with any custom settings
-        config_dict.update(overrides)
-        return RAGConfig(**config_dict)
+        # Use shared utility from Config to avoid code duplication
+        return self.config.create_rag_config(
+            filter_authors=filter_authors,
+            **overrides
+        )
 
     def _split_text_at_sentence_boundary(self, text: str, max_length: int) -> List[str]:
         """
@@ -465,4 +454,9 @@ Provide a brief, concise summary:"""
         )
 
 async def setup(bot):
-    await bot.add_cog(RAG(bot))
+    cog = RAG(bot)
+    await bot.add_cog(cog)
+    
+    # Pre-warm models in background to reduce first-query latency
+    import asyncio
+    asyncio.create_task(cog.pipeline.prewarm_models())

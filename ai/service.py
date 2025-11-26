@@ -136,7 +136,9 @@ class AIService:
         temperature: float = 0.7,
         user_id: Optional[str] = None,
         user_display_name: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        personality_mode: Optional[str] = None,
+        add_variety: bool = False
     ) -> dict:
         """
         Generate a response for any prompt (generic AI completion).
@@ -154,6 +156,8 @@ class AIService:
             user_id: Optional Discord user ID for social credit tone injection
             user_display_name: Optional display name for social credit initialization
             system_prompt: Optional base system prompt (tone will be prepended if social credit enabled)
+            personality_mode: Optional personality mode ("friendly", "professional", "witty", "supportive")
+            add_variety: If True, adds response variety enhancements to the prompt
             
         Returns:
             Dictionary with response results and metadata
@@ -193,6 +197,22 @@ class AIService:
             final_system_prompt = tone_system_prompt
         elif system_prompt:
             final_system_prompt = system_prompt
+        
+        # Apply response variety enhancements if enabled
+        if add_variety or personality_mode:
+            from .modifiers import apply_response_variety, detect_response_category
+            
+            # Detect appropriate response category from the prompt
+            starter_category = detect_response_category(prompt) if add_variety else None
+            
+            # Apply variety to the system prompt (or create one if none exists)
+            base = final_system_prompt or "You are a helpful Discord bot assistant."
+            final_system_prompt = apply_response_variety(
+                base_prompt=base,
+                add_starter=add_variety,
+                starter_category=starter_category,
+                personality_mode=personality_mode
+            )
         
         request = AIRequest(
             prompt=prompt,

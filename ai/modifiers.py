@@ -1,9 +1,14 @@
 """
 Response modifiers for AI service.
-This module provides tone-based system prompts based on user scores.
+
+This module provides:
+- Tone-based system prompts based on social credit scores
+- Response variety features for more engaging interactions
+- Personality modifiers for different conversation styles
 """
 
-from typing import Dict
+import random
+from typing import Dict, List, Optional
 
 # Tone tier thresholds (inclusive lower bound)
 TIER_THRESHOLDS = {
@@ -148,3 +153,190 @@ def get_tone_prompt(score: int) -> str:
     """
     tier = get_tone_tier(score)
     return TONE_SYSTEM_PROMPTS.get(tier, TONE_SYSTEM_PROMPTS["neutral"])
+
+
+# =============================================================================
+# RESPONSE VARIETY SYSTEM
+# =============================================================================
+
+# Response starters by category - adds variety to AI responses
+RESPONSE_STARTERS = {
+    "acknowledgment": [
+        "Good question!",
+        "Interesting point...",
+        "Let me think about that.",
+        "That's worth discussing.",
+        "I can help with that!",
+    ],
+    "memory_recall": [
+        "From what I remember...",
+        "Looking back at the conversations...",
+        "Based on what was discussed...",
+        "If I recall correctly...",
+        "The chat history shows...",
+    ],
+    "clarification": [
+        "So basically...",
+        "To put it simply...",
+        "Here's the thing...",
+        "The way I understand it...",
+        "Breaking it down...",
+    ],
+    "enthusiasm": [
+        "Oh, this is a fun one!",
+        "Glad you asked!",
+        "Ooh, I love this topic!",
+        "Nice question!",
+        "This is interesting!",
+    ],
+    "casual": [
+        "So...",
+        "Well...",
+        "Hmm...",
+        "Okay so...",
+        "Right, so...",
+    ],
+}
+
+# Transition phrases for flowing responses
+TRANSITION_PHRASES = [
+    "Also,",
+    "On top of that,",
+    "Plus,",
+    "And interestingly,",
+    "What's cool is that",
+    "The thing is,",
+    "Building on that,",
+]
+
+# Personality modes that can be applied to responses
+PERSONALITY_MODES = {
+    "friendly": {
+        "description": "Warm, approachable, and helpful",
+        "traits": ["uses casual language", "encouraging", "uses occasional emojis"],
+        "prompt_addition": "Be warm, friendly, and approachable. Use casual language and the occasional emoji to keep things light."
+    },
+    "professional": {
+        "description": "Clear, concise, and authoritative",
+        "traits": ["direct", "factual", "structured"],
+        "prompt_addition": "Be professional and direct. Focus on clarity and accuracy. Keep responses well-structured."
+    },
+    "witty": {
+        "description": "Clever, humorous, and engaging",
+        "traits": ["makes jokes", "clever observations", "playful"],
+        "prompt_addition": "Be witty and clever. Add humor where appropriate and make the conversation engaging and fun."
+    },
+    "supportive": {
+        "description": "Encouraging, patient, and understanding",
+        "traits": ["validating", "empathetic", "reassuring"],
+        "prompt_addition": "Be supportive and encouraging. Acknowledge the user's perspective and provide reassurance."
+    },
+}
+
+
+def get_random_starter(category: str = "casual") -> str:
+    """
+    Get a random response starter from the specified category.
+    
+    Args:
+        category: One of "acknowledgment", "memory_recall", "clarification", 
+                  "enthusiasm", or "casual"
+                  
+    Returns:
+        Random starter phrase from the category
+    """
+    starters = RESPONSE_STARTERS.get(category, RESPONSE_STARTERS["casual"])
+    return random.choice(starters)
+
+
+def get_random_transition() -> str:
+    """
+    Get a random transition phrase for flowing responses.
+    
+    Returns:
+        Random transition phrase
+    """
+    return random.choice(TRANSITION_PHRASES)
+
+
+def get_personality_prompt(mode: str = "friendly") -> str:
+    """
+    Get additional prompt text for a personality mode.
+    
+    Args:
+        mode: One of "friendly", "professional", "witty", or "supportive"
+        
+    Returns:
+        Prompt addition for the personality mode
+    """
+    personality = PERSONALITY_MODES.get(mode, PERSONALITY_MODES["friendly"])
+    return personality["prompt_addition"]
+
+
+def apply_response_variety(
+    base_prompt: str,
+    add_starter: bool = False,
+    starter_category: Optional[str] = None,
+    personality_mode: Optional[str] = None
+) -> str:
+    """
+    Apply response variety enhancements to a base prompt.
+    
+    Args:
+        base_prompt: The original system prompt
+        add_starter: Whether to suggest using a response starter
+        starter_category: Category of starter to suggest
+        personality_mode: Personality mode to apply
+        
+    Returns:
+        Enhanced prompt with variety features
+    """
+    enhancements = []
+    
+    if personality_mode and personality_mode in PERSONALITY_MODES:
+        enhancements.append(get_personality_prompt(personality_mode))
+    
+    if add_starter and starter_category:
+        starter = get_random_starter(starter_category)
+        enhancements.append(f"Consider starting your response naturally, perhaps with something like '{starter}' or similar.")
+    
+    if enhancements:
+        enhancement_text = "\n\n".join(enhancements)
+        return f"{base_prompt}\n\n{enhancement_text}"
+    
+    return base_prompt
+
+
+def detect_response_category(query: str) -> str:
+    """
+    Detect the best response category based on the query.
+    
+    Args:
+        query: User's question/message
+        
+    Returns:
+        Suggested category for response starter
+    """
+    query_lower = query.lower()
+    
+    # Memory/recall queries
+    memory_keywords = ["remember", "recall", "what did", "when did", "who said", 
+                       "was there", "did anyone", "history", "past", "before"]
+    if any(kw in query_lower for kw in memory_keywords):
+        return "memory_recall"
+    
+    # Questions that need clarification
+    clarify_keywords = ["what is", "what's", "explain", "how does", "why"]
+    if any(kw in query_lower for kw in clarify_keywords):
+        return "clarification"
+    
+    # Interesting/engaging topics
+    engage_keywords = ["cool", "interesting", "fun", "favorite", "best", "recommend"]
+    if any(kw in query_lower for kw in engage_keywords):
+        return "enthusiasm"
+    
+    # Questions
+    if query_lower.rstrip().endswith("?"):
+        return "acknowledgment"
+    
+    return "casual"

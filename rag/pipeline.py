@@ -29,28 +29,53 @@ class RAGPipeline:
         try:
             self.chunked_memory = chunked_memory_service or ChunkedMemoryService(config=self.config)
         except (KeyError, AttributeError, TypeError, RuntimeError) as e:
-            error_str = str(e).lower()
-            # Check for various frozenset-related errors:
-            is_frozenset_error = (
-                "frozenset" in error_str or
-                (isinstance(e, KeyError) and (not str(e) or str(e) == "frozenset()")) or
-                (isinstance(e, TypeError) and "frozenset" in error_str)
-            )
-            if is_frozenset_error:
-                self.logger.error(
-                    f"ChromaDB compatibility issue detected during RAGPipeline initialization ({type(e).__name__}: {e}). "
-                    "Set RESET_CHROMADB=true in environment variables to fix this."
-                )
-                raise RuntimeError(
-                    "ChromaDB initialization failed due to metadata compatibility issue. "
-                    "Set RESET_CHROMADB=true in your environment variables and redeploy. "
-                    "This will clear the ChromaDB database and allow it to be recreated."
-                ) from e
+            from storage.utils import handle_chromadb_init_error
+            is_chromadb_error, runtime_error = handle_chromadb_init_error(e, "RAGPipeline initialization")
+            if is_chromadb_error:
+                raise runtime_error
             raise
         self.ai_service = ai_service or AIService()
         self.query_enhancer = QueryEnhancementService(ai_service=self.ai_service)
         self.message_storage = message_storage or MessageStorage()
-        self.reranker = None 
+        self.reranker = None
+        self._reranker_prewarmed = False
+    
+    async def prewarm_models(self) -> None:
+        """
+        Pre-warm models to avoid cold start latency on first query.
+        
+        This loads the reranker model in the background so the first
+        query doesn't incur the model loading penalty.
+        
+        Should be called during bot startup (e.g., in setup_hook).
+        """
+        import asyncio
+        
+        if self._reranker_prewarmed:
+            self.logger.debug("Reranker already prewarmed, skipping")
+            return
+        
+        try:
+            self.logger.info("Pre-warming reranker model...")
+            
+            # Load reranker in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            
+            def load_reranker():
+                from rag.reranking import ReRankingService
+                return ReRankingService()
+            
+            self.reranker = await loop.run_in_executor(None, load_reranker)
+            self._reranker_prewarmed = True
+            self.logger.info("Reranker model pre-warmed successfully")
+            
+        except ImportError as e:
+            self.logger.warning(
+                f"Could not prewarm reranker: {e}. "
+                "Reranking will be disabled or load on first use."
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to prewarm reranker: {e}") 
 
     async def answer_question(
         self,
@@ -447,14 +472,18 @@ Write in flowing paragraphs - no bullet points or lists. Just talk naturally abo
     ) -> List[Dict]:
         """
         Retrieve using multiple query variations and fuse results.
+        
+        Runs all query variations in PARALLEL for better performance.
         """
+        import asyncio
+        
         # Generate query variations
         queries = await self.query_enhancer.generate_multi_queries(
             query,
             num_queries=config.num_query_variations
         )
 
-        self.logger.info(f"Retrieving with {len(queries)} query variations")
+        self.logger.info(f"Retrieving with {len(queries)} query variations (parallel)")
 
         # Get strategy with fallback (same as in _retrieve_chunks)
         try:
@@ -468,30 +497,32 @@ Write in flowing paragraphs - no bullet points or lists. Just talk naturally abo
         multi_query_multiplier = self.config.RAG_MULTI_QUERY_MULTIPLIER
         fetch_k_multi = int(config.top_k * multi_query_multiplier)
         
-        all_results = []
-        for q in queries:
+        # Create search tasks for all queries in PARALLEL
+        async def search_single_query(q: str):
             if config.use_hybrid_search:
-                results = await self.chunked_memory.search_hybrid(
+                return await self.chunked_memory.search_hybrid(
                     query=q,
                     strategy=strategy,
-                    top_k=fetch_k_multi,  # Get more candidates (configurable multiplier)
-                    exclude_blacklisted=True,  # Explicitly exclude blacklisted authors
+                    top_k=fetch_k_multi,
+                    exclude_blacklisted=True,
                     filter_authors=config.filter_authors
                 )
             else:
-                results = await self.chunked_memory.search(
+                return await self.chunked_memory.search(
                     query=q,
                     strategy=strategy,
-                    top_k=fetch_k_multi,  # Get more candidates (configurable multiplier)
-                    exclude_blacklisted=True,  # Explicitly exclude blacklisted authors
+                    top_k=fetch_k_multi,
+                    exclude_blacklisted=True,
                     filter_authors=config.filter_authors
                 )
-
-            all_results.append(results)
+        
+        # Run all searches in parallel
+        tasks = [search_single_query(q) for q in queries]
+        all_results = await asyncio.gather(*tasks)
 
         # Fuse all results using RRF
         fused_results = reciprocal_rank_fusion(
-            ranked_lists=all_results,
+            ranked_lists=list(all_results),
             top_k=config.top_k
         )
 
