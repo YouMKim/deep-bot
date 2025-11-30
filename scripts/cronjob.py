@@ -261,6 +261,9 @@ class CronjobBot(commands.Bot):
                 timestamp=datetime.now()
             )
             
+            # Get guild_id from the channel (fallback if message doesn't have it)
+            default_guild_id = channel.guild.id if channel.guild else None
+            
             for snapshot in snapshot_messages:
                 years_ago = snapshot['years_ago']
                 date = snapshot['date']
@@ -269,13 +272,26 @@ class CronjobBot(commands.Bot):
                 if not messages:
                     continue
                 
-                # Format messages for this year
+                # Format messages for this year with links
                 message_texts = []
                 for msg in messages:
                     author = msg.get('author_display_name') or msg.get('author_name', 'Unknown')
                     content = msg.get('content', '')[:200]  # Limit length
                     channel_name = msg.get('channel_name', 'unknown')
-                    message_texts.append(f"**{author}** in #{channel_name}: {content}")
+                    message_id = msg.get('message_id')
+                    channel_id = msg.get('channel_id')
+                    guild_id = msg.get('guild_id') or default_guild_id
+                    
+                    # Build message link
+                    message_link = None
+                    if guild_id and channel_id and message_id:
+                        message_link = f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+                    
+                    # Format message with optional link
+                    msg_text = f"**{author}** in #{channel_name}: {content}"
+                    if message_link:
+                        msg_text += f" [🔗]({message_link})"
+                    message_texts.append(msg_text)
                 
                 if message_texts:
                     field_value = "\n".join(message_texts)

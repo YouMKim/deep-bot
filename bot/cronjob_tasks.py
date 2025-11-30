@@ -209,6 +209,9 @@ class CronjobTasks:
                 timestamp=datetime.now()
             )
             
+            # Get guild_id from the channel (fallback if message doesn't have it)
+            default_guild_id = channel.guild.id if channel.guild else None
+            
             for snapshot in snapshot_messages:
                 years_ago = snapshot['years_ago']
                 date = snapshot['date']
@@ -222,13 +225,32 @@ class CronjobTasks:
                 author = msg.get('author_display_name') or msg.get('author_name', 'Unknown')
                 content = msg.get('content', '')
                 channel_name = msg.get('channel_name', 'unknown')
+                message_id = msg.get('message_id')
+                channel_id = msg.get('channel_id')
+                guild_id = msg.get('guild_id') or default_guild_id  # Use message's guild_id or fallback
                 
-                # Format the message
+                # Build message link if we have all required IDs
+                message_link = None
+                if guild_id and channel_id and message_id:
+                    message_link = f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+                
+                # Format the message with link
                 field_value = f"**{author}** in #{channel_name}:\n{content}"
                 
+                # Add clickable link if available
+                if message_link:
+                    field_value += f"\n\n[🔗 View Original Message]({message_link})"
+                
                 # Truncate if too long (Discord embed field limit is 1024 chars)
+                # Reserve space for the link (~50 chars)
+                max_content_length = 1024 - 60 if message_link else 1024
                 if len(field_value) > 1024:
-                    field_value = field_value[:1021] + "..."
+                    # Truncate content but keep the link
+                    if message_link:
+                        content_truncated = content[:max_content_length - len(f"**{author}** in #{channel_name}:\n\n[🔗 View Original Message]({message_link})") - 10]
+                        field_value = f"**{author}** in #{channel_name}:\n{content_truncated}...\n\n[🔗 View Original Message]({message_link})"
+                    else:
+                        field_value = field_value[:1021] + "..."
                 
                 embed.add_field(
                     name=f"{years_ago} year{'s' if years_ago > 1 else ''} ago ({date.strftime('%B %d, %Y')})",
