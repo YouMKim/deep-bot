@@ -290,7 +290,7 @@ class CronjobBot(commands.Bot):
                     # Format message with optional link
                     msg_text = f"**{author}** in #{channel_name}: {content}"
                     if message_link:
-                        msg_text += f" [🔗]({message_link})"
+                        msg_text += f" [🔗]({message_link})\n"
                     message_texts.append(msg_text)
                 
                 if message_texts:

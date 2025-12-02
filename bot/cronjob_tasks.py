@@ -239,7 +239,7 @@ class CronjobTasks:
                 
                 # Add clickable link if available
                 if message_link:
-                    field_value += f"\n\n[🔗 View Original Message]({message_link})"
+                    field_value += f"\n\n[🔗 View Original Message]({message_link})\n"
                 
                 # Truncate if too long (Discord embed field limit is 1024 chars)
                 # Reserve space for the link (~50 chars)
