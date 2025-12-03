@@ -237,9 +237,9 @@ class CronjobTasks:
                 # Format the message with link
                 field_value = f"**{author}** in #{channel_name}:\n{content}"
                 
-                # Add clickable link if available
+                # Add clickable link if available (with extra spacing)
                 if message_link:
-                    field_value += f"\n\n[🔗 View Original Message]({message_link})\n"
+                    field_value += f"\n\n[🔗 View Original Message]({message_link})\n\n"
                 
                 # Truncate if too long (Discord embed field limit is 1024 chars)
                 # Reserve space for the link (~50 chars)
