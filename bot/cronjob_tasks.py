@@ -234,21 +234,23 @@ class CronjobTasks:
                 if guild_id and channel_id and message_id:
                     message_link = f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
                 
-                # Format the message with link
-                field_value = f"**{author}** in #{channel_name}:\n{content}"
-                
-                # Add clickable link if available (with extra spacing)
+                # Format the message with link (with extra newlines for spacing)
                 if message_link:
-                    field_value += f"\n\n[🔗 View Original Message]({message_link})\n\n"
+                    # Add link with multiple newlines before and after for better spacing
+                    field_value = f"**{author}** in #{channel_name}:\n{content}\n\n[🔗 View Original Message]({message_link})\n\n"
+                else:
+                    field_value = f"**{author}** in #{channel_name}:\n{content}"
                 
                 # Truncate if too long (Discord embed field limit is 1024 chars)
-                # Reserve space for the link (~50 chars)
-                max_content_length = 1024 - 60 if message_link else 1024
                 if len(field_value) > 1024:
-                    # Truncate content but keep the link
+                    # Truncate content but keep the link with proper spacing
                     if message_link:
-                        content_truncated = content[:max_content_length - len(f"**{author}** in #{channel_name}:\n\n[🔗 View Original Message]({message_link})") - 10]
-                        field_value = f"**{author}** in #{channel_name}:\n{content_truncated}...\n\n[🔗 View Original Message]({message_link})"
+                        header_len = len(f"**{author}** in #{channel_name}:\n")
+                        link_text = f"\n\n[🔗 View Original Message]({message_link})\n\n"
+                        link_len = len(link_text)
+                        available = 1024 - header_len - link_len - 10  # -10 for "..."
+                        content_truncated = content[:available] if available > 0 else ""
+                        field_value = f"**{author}** in #{channel_name}:\n{content_truncated}...{link_text}"
                     else:
                         field_value = field_value[:1021] + "..."
                 
