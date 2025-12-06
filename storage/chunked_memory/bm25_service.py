@@ -6,6 +6,7 @@ Handles BM25 keyword-based search with caching.
 import logging
 import re
 from typing import Dict, List, Optional, Any, TYPE_CHECKING
+from collections import OrderedDict
 from rank_bm25 import BM25Okapi
 from storage.vectors.base import VectorStorage
 from chunking.constants import ChunkStrategy
@@ -40,8 +41,10 @@ class BM25Service:
         self.config = config or ConfigClass
         self.logger = logging.getLogger(__name__)
         
-        # BM25 cache: {collection_name: {'bm25': BM25Okapi, 'tokenized_corpus': List, 'documents': List, 'version': int}}
-        self._bm25_cache: Dict[str, Dict[str, Any]] = {}
+        # BM25 cache with LRU eviction: OrderedDict tracks access order
+        # Max 5 collections cached (prevents memory bloat with multiple strategies)
+        self._bm25_cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        self._max_cache_size = 5  # Limit cache to 5 collections max
 
     def search(
         self,
@@ -74,7 +77,8 @@ class BM25Service:
         cache_entry = self._bm25_cache.get(collection_name)
         
         if cache_entry and cache_entry.get('version') == current_count and current_count > 0:
-            # Cache is valid, use it
+            # Cache is valid, use it - move to end (most recently used)
+            self._bm25_cache.move_to_end(collection_name)
             self.logger.debug(f"Using cached BM25 index for {collection_name}")
             bm25 = cache_entry['bm25']
             all_docs = cache_entry['documents']
@@ -98,14 +102,21 @@ class BM25Service:
             # Build BM25 index
             bm25 = BM25Okapi(tokenized_corpus)
             
-            # Cache the index
+            # Evict oldest entry if cache is full (LRU eviction)
+            if len(self._bm25_cache) >= self._max_cache_size and collection_name not in self._bm25_cache:
+                oldest_collection = next(iter(self._bm25_cache))
+                del self._bm25_cache[oldest_collection]
+                self.logger.debug(f"Evicted oldest BM25 cache entry: {oldest_collection}")
+            
+            # Cache the index (moves to end if already exists, or adds to end)
             self._bm25_cache[collection_name] = {
                 'bm25': bm25,
                 'tokenized_corpus': tokenized_corpus,
                 'documents': all_docs,
                 'version': current_count
             }
-            self.logger.info(f"Cached BM25 index for {collection_name}")
+            self._bm25_cache.move_to_end(collection_name)
+            self.logger.info(f"Cached BM25 index for {collection_name} (cache size: {len(self._bm25_cache)}/{self._max_cache_size})")
 
         # Tokenize query
         tokenized_query = self.tokenize(query)
@@ -177,4 +188,10 @@ class BM25Service:
         if collection_name in self._bm25_cache:
             del self._bm25_cache[collection_name]
             self.logger.debug(f"Invalidated BM25 cache for {collection_name}")
+    
+    def clear_cache(self) -> None:
+        """Clear all BM25 cache entries to free memory."""
+        cache_size = len(self._bm25_cache)
+        self._bm25_cache.clear()
+        self.logger.info(f"Cleared all BM25 cache entries ({cache_size} collections)")
 

@@ -167,10 +167,20 @@ class Chatbot(commands.Cog):
         self.cleanup_rate_limits.cancel()
         logger.info("Chatbot cog unloaded")
     
-    @tasks.loop(minutes=10)
+    @tasks.loop(minutes=5)  # More frequent cleanup (every 5 minutes instead of 10)
     async def cleanup_sessions(self):
         """Remove expired sessions to free memory."""
         await self.session_manager.cleanup_expired_sessions()
+        # Also clear BM25 cache periodically to free memory
+        try:
+            if hasattr(self.rag_pipeline, 'chunked_memory') and hasattr(self.rag_pipeline.chunked_memory, 'bm25_service'):
+                # Only clear if cache is large (let it grow during active use)
+                cache_size = len(self.rag_pipeline.chunked_memory.bm25_service._bm25_cache)
+                if cache_size > 3:  # Clear if more than 3 collections cached
+                    self.rag_pipeline.chunked_memory.bm25_service.clear_cache()
+                    logger.debug(f"Cleared BM25 cache ({cache_size} collections)")
+        except Exception as e:
+            logger.debug(f"Failed to clear BM25 cache during cleanup: {e}")
         logger.debug("Cleaned up expired chatbot sessions")
     
     @cleanup_sessions.before_loop

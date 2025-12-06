@@ -60,10 +60,12 @@ class SessionManager:
             Session dictionary
         """
         # Force cleanup if too many sessions (prevent memory issues)
-        MAX_SESSIONS = 1000
+        # Lowered threshold for proactive cleanup
+        MAX_SESSIONS = 500
         async with self._lock:
-            if len(self.sessions) > MAX_SESSIONS:
-                logger.warning(f"Session count ({len(self.sessions)}) exceeds limit, forcing cleanup")
+            session_count = len(self.sessions)
+            if session_count > MAX_SESSIONS:
+                logger.warning(f"Session count ({session_count}) exceeds limit, forcing cleanup")
                 # Note: We can't await here because we're holding _lock, so we'll do it after
                 needs_cleanup = True
             else:

@@ -27,6 +27,8 @@ class CronjobTasks:
         self.message_storage = MessageStorage()
         self.message_loader = MessageLoader(self.message_storage, config=Config)
         self.logger = logger
+        # Reuse ChunkedMemoryService to avoid creating multiple instances
+        self._chunked_service = None
 
     async def load_server_task(self):
         """Load all messages from all channels in the server."""
@@ -74,9 +76,11 @@ class CronjobTasks:
                     # Stage 2: Chunk and embed (only if messages were loaded)
                     if channel_stats.get('successfully_loaded', 0) > 0:
                         try:
-                            chunked_service = ChunkedMemoryService(config=Config)
+                            # Reuse service instance to avoid memory bloat
+                            if self._chunked_service is None:
+                                self._chunked_service = ChunkedMemoryService(config=Config)
                             
-                            chunk_stats = await chunked_service.ingest_channel(
+                            chunk_stats = await self._chunked_service.ingest_channel(
                                 channel_id=str(channel.id)
                             )
                             
