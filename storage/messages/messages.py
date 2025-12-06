@@ -47,6 +47,13 @@ CREATE TABLE IF NOT EXISTS chunk_checkpoints (
          PRIMARY KEY (channel_id, strategy)
      );
 
+CREATE TABLE IF NOT EXISTS year_in_review_completions (
+    user_id TEXT PRIMARY KEY,
+    user_display_name TEXT,
+    completed_at TEXT,
+    stats_posted BOOLEAN DEFAULT 0
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_messages_channel_timestamp 
     ON messages(channel_id, timestamp DESC);
@@ -575,3 +582,178 @@ class MessageStorage(SQLiteStorage):
                 })
             
             return messages
+    
+    def get_user_messages_by_date_range(
+        self,
+        author_id: str,
+        start_date: str,
+        end_date: str
+    ) -> List[Dict]:
+        """
+        Get messages for a specific user within a date range across all channels.
+        
+        Args:
+            author_id: User ID to filter by
+            start_date: Start date (ISO format timestamp string)
+            end_date: End date (ISO format timestamp string)
+            
+        Returns:
+            List of message dictionaries, ordered oldest to newest
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT message_id, channel_id, guild_id, content,
+                    author_id, author_name, author_display_name,
+                    channel_name, guild_name, timestamp, created_at,
+                    is_bot, has_attachments, message_type, metadata
+                FROM messages
+                WHERE author_id = ? AND timestamp >= ? AND timestamp <= ? AND is_bot = 0
+                ORDER BY timestamp ASC
+            """, (str(author_id), start_date, end_date))
+            
+            rows = cursor.fetchall()
+            messages = []
+            for row in rows:
+                messages.append({
+                    'message_id': row[0],
+                    'channel_id': row[1],
+                    'guild_id': row[2],
+                    'content': row[3],
+                    'author_id': row[4],
+                    'author_name': row[5],
+                    'author_display_name': row[6],
+                    'channel_name': row[7],
+                    'guild_name': row[8],
+                    'timestamp': row[9],
+                    'created_at': row[10],
+                    'is_bot': bool(row[11]),
+                    'has_attachments': bool(row[12]),
+                    'message_type': row[13],
+                    'metadata': json.loads(row[14]) if row[14] else {}
+                })
+            
+            return messages
+    
+    def get_unique_users_in_date_range(
+        self,
+        start_date: str,
+        end_date: str
+    ) -> List[Dict]:
+        """
+        Get all unique non-bot users who posted messages in the date range.
+        
+        Args:
+            start_date: Start date (ISO format timestamp string)
+            end_date: End date (ISO format timestamp string)
+            
+        Returns:
+            List of dictionaries with user_id and user_display_name
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT DISTINCT author_id, author_display_name, author_name
+                FROM messages
+                WHERE timestamp >= ? AND timestamp <= ? AND is_bot = 0
+                ORDER BY author_display_name
+            """, (start_date, end_date))
+            
+            rows = cursor.fetchall()
+            users = []
+            for row in rows:
+                users.append({
+                    'author_id': row[0],
+                    'author_display_name': row[1] or row[2] or 'Unknown',
+                    'author_name': row[2]
+                })
+            
+            return users
+    
+    def mark_year_in_review_completed(
+        self,
+        user_id: str,
+        user_display_name: str
+    ) -> None:
+        """
+        Mark a user as having completed year-in-review processing.
+        
+        Args:
+            user_id: User ID
+            user_display_name: User's display name
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO year_in_review_completions (
+                    user_id, user_display_name, completed_at, stats_posted
+                ) VALUES (?, ?, ?, 1)
+            """, (
+                str(user_id),
+                user_display_name,
+                datetime.now().isoformat()
+            ))
+            conn.commit()
+            self.logger.info(f"Marked year-in-review as completed for user {user_id}")
+    
+    def get_next_unprocessed_user(
+        self,
+        start_date: str,
+        end_date: str
+    ) -> Optional[Dict]:
+        """
+        Get the next user who hasn't been processed for year-in-review.
+        
+        Args:
+            start_date: Start date (ISO format timestamp string)
+            end_date: End date (ISO format timestamp string)
+            
+        Returns:
+            Dictionary with user_id and user_display_name, or None if all users processed
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get users who have messages but haven't been completed
+            cursor.execute("""
+                SELECT DISTINCT m.author_id, m.author_display_name, m.author_name
+                FROM messages m
+                LEFT JOIN year_in_review_completions y ON m.author_id = y.user_id
+                WHERE m.timestamp >= ? 
+                  AND m.timestamp <= ? 
+                  AND m.is_bot = 0
+                  AND y.user_id IS NULL
+                ORDER BY m.author_display_name
+                LIMIT 1
+            """, (start_date, end_date))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'author_id': row[0],
+                    'author_display_name': row[1] or row[2] or 'Unknown',
+                    'author_name': row[2]
+                }
+            
+            return None
+    
+    def is_user_year_in_review_completed(self, user_id: str) -> bool:
+        """
+        Check if a user has already been processed for year-in-review.
+        
+        Args:
+            user_id: User ID to check
+            
+        Returns:
+            True if completed, False otherwise
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 1 FROM year_in_review_completions
+                WHERE user_id = ?
+            """, (str(user_id),))
+            
+            return cursor.fetchone() is not None

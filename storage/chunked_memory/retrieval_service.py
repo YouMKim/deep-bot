@@ -206,12 +206,12 @@ class RetrievalService:
         bm25_task = loop.run_in_executor(
             None,
             lambda: self.bm25_service.search(
-                query=query,
-                strategy=strategy,
-                active_strategy=active_strategy,
-                top_k=fetch_k,
-                exclude_blacklisted=exclude_blacklisted,
-                filter_authors=filter_authors
+            query=query,
+            strategy=strategy,
+            active_strategy=active_strategy,
+            top_k=fetch_k,
+            exclude_blacklisted=exclude_blacklisted,
+            filter_authors=filter_authors
             )
         )
 

@@ -37,7 +37,7 @@ class RAGPipeline:
         self.ai_service = ai_service or AIService()
         self.query_enhancer = QueryEnhancementService(ai_service=self.ai_service)
         self.message_storage = message_storage or MessageStorage()
-        self.reranker = None
+        self.reranker = None 
         self._reranker_prewarmed = False
     
     async def prewarm_models(self) -> None:
@@ -515,7 +515,7 @@ Write in flowing paragraphs - no bullet points or lists. Just talk naturally abo
                     exclude_blacklisted=True,
                     filter_authors=config.filter_authors
                 )
-        
+
         # Run all searches in parallel
         tasks = [search_single_query(q) for q in queries]
         all_results = await asyncio.gather(*tasks)

@@ -145,6 +145,10 @@ Guidelines:
     # Snapshot Configuration
     SNAPSHOT_CHANNEL_ID: int = int(os.getenv("SNAPSHOT_CHANNEL_ID", "0"))  # Channel to post snapshots to
 
+    # Year in Review Configuration
+    YEAR_IN_REVIEW_ENABLED: bool = os.getenv("YEAR_IN_REVIEW_ENABLED", "True").lower() == "true"
+    YEAR_IN_REVIEW_CHANNEL_ID: int = int(os.getenv("YEAR_IN_REVIEW_CHANNEL_ID", "0"))  # Channel to post reviews to (defaults to SNAPSHOT_CHANNEL_ID if 0)
+
     # Cronjob Configuration
     CRONJOB_SCHEDULE_TIME: str = os.getenv("CRONJOB_SCHEDULE_TIME", "14:00")  # Time to run cronjob daily (HH:MM format, UTC). Default 14:00 UTC = 6 AM Pacific
     CRONJOB_ENABLED: bool = os.getenv("CRONJOB_ENABLED", "True").lower() == "true"  # Enable/disable cronjob scheduler

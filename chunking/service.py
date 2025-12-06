@@ -41,7 +41,7 @@ class ChunkingService:
         self.logger = logging.getLogger(__name__)
         self.config = config or ConfigClass
         self.temporal_window = temporal_window or self.config.CHUNKING_TEMPORAL_WINDOW
-        self.conversation_gap = conversation_gap or self.config.CHUNKING_CONVERSATION_GAP 
+        self.conversation_gap = conversation_gap or self.config.CHUNKING_CONVERSATION_GAP
 
     def _validate_messages(self, messages: List[Dict]) -> bool:
         if not isinstance(messages, list):
@@ -55,7 +55,7 @@ class ChunkingService:
             raise ValueError(f"Message must be a list of dictionaries, got {type(sample)}")
         return True 
 
-    def count_tokens(self, text: str, model: str = "cl100k_base") -> int:
+    def count_tokens(self, text: str, model: str = "cl100k_base") -> int: 
         """
         Count tokens in text using shared tokenizer utility.
         
