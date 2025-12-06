@@ -251,7 +251,7 @@ class CronjobTasks:
                 if len(field_value) > 1024:
                     # Truncate content but keep the link with proper spacing
                     if message_link:
-                        header_len = len(f"\n\n**{author}** in #{channel_name}:\n")
+                        header_len = len(f"\n**{author}** in #{channel_name}:\n")
                         link_text = f"\n[🔗 View Original Message]({message_link})\n"
                         link_len = len(link_text)
                         available = 1024 - header_len - link_len - 10  # -10 for "..."
@@ -398,14 +398,16 @@ class CronjobTasks:
             extremes_text = ""
             if extremes.get('longest'):
                 longest = extremes['longest']
-                preview = longest['content'][:100] + "..." if len(longest['content']) > 100 else longest['content']
-                link_text = f" [🔗]({longest['link']})" if longest.get('link') else ""
-                extremes_text += f"**Longest:** {longest['char_count']:,} chars - {preview}{link_text}\n"
+                # Show smaller preview (50 chars) for longest message
+                content = longest['content']
+                preview = content[:50] + "..." if len(content) > 50 else content
+                link_text = f" - [View Original Message]({longest['link']})" if longest.get('link') else ""
+                extremes_text += f"**Longest:** {longest['char_count']:,} chars - \"{preview}\"{link_text}\n"
             
             if extremes.get('shortest'):
                 shortest = extremes['shortest']
                 preview = shortest['content'][:50] + "..." if len(shortest['content']) > 50 else shortest['content']
-                link_text = f" [🔗]({shortest['link']})" if shortest.get('link') else ""
+                link_text = f" - [View Original Message]({shortest['link']})" if shortest.get('link') else ""
                 extremes_text += f"**Shortest:** {shortest['char_count']:,} chars - \"{preview}\"{link_text}\n"
             
             if extremes_text:
@@ -425,7 +427,7 @@ class CronjobTasks:
                     hour_display = "12 PM"
                 else:
                     hour_display = f"{hour - 12} PM"
-                activity_text += f"**Most active hour:** {hour_display} ({activity.get('most_active_hour_count', 0)} messages)\n"
+                activity_text += f"**Most active hour:** {hour_display} PT ({activity.get('most_active_hour_count', 0)} messages)\n"
             
             if activity.get('most_active_day'):
                 activity_text += f"**Most active day:** {activity['most_active_day']} ({activity.get('most_active_day_count', 0)} messages)\n"
@@ -500,7 +502,7 @@ class CronjobTasks:
             if emojis.get('most_emoji_message'):
                 most_emoji = emojis['most_emoji_message']
                 preview = most_emoji['content'][:50] + "..." if len(most_emoji['content']) > 50 else most_emoji['content']
-                link_text = f" [🔗]({most_emoji['link']})" if most_emoji.get('link') else ""
+                link_text = f" - [View Original Message]({most_emoji['link']})" if most_emoji.get('link') else ""
                 emoji_text += f"**Most emojis in one message:** {most_emoji['emoji_count']} - \"{preview}\"{link_text}"
             
             if emoji_text:

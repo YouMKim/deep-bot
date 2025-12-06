@@ -6,23 +6,102 @@ Calculates comprehensive user statistics from Discord message data.
 import re
 import random
 from typing import List, Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import Counter
 import logging
 
 logger = logging.getLogger(__name__)
 
 # Filler words to exclude from word analysis
+# Includes articles, pronouns, prepositions, common verbs, conjunctions, and adverbs
 FILLER_WORDS = {
-    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-    'of', 'with', 'by', 'from', 'as', 'is', 'it', 'this', 'that', 'these',
-    'those', 'i', 'you', 'he', 'she', 'we', 'they', 'me', 'him', 'her',
-    'us', 'them', 'my', 'your', 'his', 'her', 'its', 'our', 'their',
-    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-    'should', 'may', 'might', 'can', 'be', 'been', 'being', 'was', 'were',
-    'are', 'am', 'get', 'got', 'go', 'went', 'come', 'came', 'see', 'saw',
-    'know', 'knew', 'think', 'thought', 'say', 'said', 'tell', 'told',
-    'just', 'only', 'also', 'very', 'really', 'quite', 'so', 'too', 'well'
+    # Articles
+    'the', 'a', 'an',
+    
+    # Pronouns
+    'i', 'you', 'he', 'she', 'it', 'we', 'they',
+    'me', 'him', 'her', 'us', 'them',
+    'my', 'your', 'his', 'her', 'its', 'our', 'their',
+    'myself', 'yourself', 'himself', 'hers', 'itself', 'ourselves', 'themselves',
+    'this', 'that', 'these', 'those',
+    
+    # Prepositions
+    'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as',
+    'into', 'onto', 'over', 'under', 'through', 'during', 'before', 'after',
+    'between', 'among', 'within', 'without', 'about', 'above', 'below',
+    'against', 'along', 'around', 'across', 'behind', 'beyond', 'inside',
+    'outside', 'throughout', 'toward', 'towards', 'upon', 'via',
+    
+    # Conjunctions
+    'and', 'or', 'but', 'if', 'when', 'where', 'while', 'because', 'since',
+    'although', 'though', 'unless', 'until', 'whether', 'while',
+    
+    # Common auxiliary/helping verbs
+    'be', 'been', 'being', 'am', 'is', 'are', 'was', 'were',
+    'have', 'has', 'had', 'having',
+    'do', 'does', 'did', 'doing', 'done',
+    'will', 'would', 'shall', 'should',
+    'may', 'might', 'must', 'can', 'could',
+    
+    # Very common verbs
+    'get', 'got', 'getting', 'gotten',
+    'go', 'goes', 'went', 'gone', 'going',
+    'come', 'comes', 'came', 'coming',
+    'see', 'sees', 'saw', 'seen', 'seeing',
+    'know', 'knows', 'knew', 'known', 'knowing',
+    'think', 'thinks', 'thought', 'thinking',
+    'say', 'says', 'said', 'saying',
+    'tell', 'tells', 'told', 'telling',
+    'make', 'makes', 'made', 'making',
+    'take', 'takes', 'took', 'taken', 'taking',
+    'give', 'gives', 'gave', 'given', 'giving',
+    'want', 'wants', 'wanted', 'wanting',
+    'need', 'needs', 'needed', 'needing',
+    'like', 'likes', 'liked', 'liking',
+    'try', 'tries', 'tried', 'trying',
+    'use', 'uses', 'used', 'using',
+    'find', 'finds', 'found', 'finding',
+    'work', 'works', 'worked', 'working',
+    'look', 'looks', 'looked', 'looking',
+    'call', 'calls', 'called', 'calling',
+    'ask', 'asks', 'asked', 'asking',
+    'feel', 'feels', 'felt', 'feeling',
+    'seem', 'seems', 'seemed', 'seeming',
+    'leave', 'leaves', 'left', 'leaving',
+    'let', 'lets', 'letting',
+    'put', 'puts', 'putting',
+    'show', 'shows', 'showed', 'shown', 'showing',
+    
+    # Common adverbs and intensifiers
+    'very', 'really', 'quite', 'so', 'too', 'well',
+    'just', 'only', 'also', 'even', 'still', 'already', 'yet',
+    'more', 'most', 'less', 'least', 'much', 'many', 'most',
+    'not', 'no', 'yes',
+    'now', 'then', 'here', 'there', 'where',
+    'how', 'why', 'what', 'who', 'when',
+    'always', 'never', 'often', 'sometimes', 'usually',
+    'all', 'some', 'any', 'every', 'each', 'both', 'either', 'neither',
+    'once', 'twice', 'again', 'back',
+    'up', 'down', 'out', 'off', 'away',
+    
+    # Common casual/interjection words
+    'yeah', 'yep', 'yup', 'nah', 'nope',
+    'ok', 'okay', 'alright', 'sure', 'right',
+    'hey', 'hi', 'hello', 'bye', 'thanks', 'thank',
+    'oh', 'ah', 'um', 'uh', 'hmm',
+    'lol', 'haha', 'hahaha', 'lmao', 'rofl',
+    'dunno', 'gonna', 'wanna', 'gotta',
+    
+    # Numbers as words (common in casual speech)
+    'one', 'two', 'three', 'four', 'five',
+    'first', 'second', 'third', 'last',
+    
+    # Common filler phrases (when split)
+    'im', 'ive', 'id', 'ill', 'youre', 'youve', 'youd', 'youll',
+    'hes', 'shes', 'its', 'were', 'theyre', 'theyve', 'theyd', 'theyll',
+    'thats', 'theres', 'heres', 'wheres', 'whos', 'whats',
+    'cant', 'wont', 'dont', 'doesnt', 'didnt', 'isnt', 'arent',
+    'wasnt', 'werent', 'hasnt', 'havent', 'hadnt', 'wouldnt', 'couldnt', 'shouldnt',
 }
 
 
@@ -96,18 +175,20 @@ def calculate_message_extremes(messages: List[Dict], guild_id: Optional[str] = N
     
     avg_length = sum(len(m.get('content', '')) for m in messages) / len(messages) if messages else 0
     
-    # Build message links
+    # Build message links (same format as snapshot feature)
     longest_link = None
-    if longest.get('guild_id') or guild_id:
-        guild = longest.get('guild_id') or guild_id
-        if longest.get('channel_id') and longest.get('message_id'):
-            longest_link = f"https://discord.com/channels/{guild}/{longest.get('channel_id')}/{longest.get('message_id')}"
+    longest_guild_id = longest.get('guild_id') or guild_id
+    longest_channel_id = longest.get('channel_id')
+    longest_message_id = longest.get('message_id')
+    if longest_guild_id and longest_channel_id and longest_message_id:
+        longest_link = f"https://discord.com/channels/{longest_guild_id}/{longest_channel_id}/{longest_message_id}"
     
     shortest_link = None
-    if shortest.get('guild_id') or guild_id:
-        guild = shortest.get('guild_id') or guild_id
-        if shortest.get('channel_id') and shortest.get('message_id'):
-            shortest_link = f"https://discord.com/channels/{guild}/{shortest.get('channel_id')}/{shortest.get('message_id')}"
+    shortest_guild_id = shortest.get('guild_id') or guild_id
+    shortest_channel_id = shortest.get('channel_id')
+    shortest_message_id = shortest.get('message_id')
+    if shortest_guild_id and shortest_channel_id and shortest_message_id:
+        shortest_link = f"https://discord.com/channels/{shortest_guild_id}/{shortest_channel_id}/{shortest_message_id}"
     
     return {
         'longest': {
@@ -149,12 +230,33 @@ def calculate_activity_patterns(messages: List[Dict]) -> Dict:
     
     for msg in messages:
         try:
-            timestamp = datetime.fromisoformat(msg.get('timestamp', '').replace('Z', '+00:00'))
-            # Convert to UTC if needed (or local time)
-            hour = timestamp.hour
-            day_of_week = timestamp.weekday()
-            month = timestamp.month
-            date_key = timestamp.date()
+            # Parse timestamp (Discord stores in UTC)
+            timestamp_str = msg.get('timestamp', '').replace('Z', '+00:00')
+            timestamp = datetime.fromisoformat(timestamp_str)
+            
+            # Ensure timestamp is timezone-aware (UTC)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            else:
+                # Convert to UTC if not already
+                timestamp = timestamp.astimezone(timezone.utc)
+            
+            # Convert to Pacific timezone for activity analysis
+            # Pacific timezone (handles both PST/PDT automatically)
+            try:
+                from zoneinfo import ZoneInfo
+                pacific = ZoneInfo('America/Los_Angeles')
+                pacific_timestamp = timestamp.astimezone(pacific)
+            except ImportError:
+                # Fallback for Python < 3.9: use UTC offset (-8 hours for PST, -7 for PDT)
+                # Simple approximation: assume PST (UTC-8)
+                from datetime import timedelta
+                pacific_timestamp = timestamp - timedelta(hours=8)
+            
+            hour = pacific_timestamp.hour
+            day_of_week = pacific_timestamp.weekday()
+            month = pacific_timestamp.month
+            date_key = pacific_timestamp.date()
             
             hour_counts[hour] += 1
             day_counts[day_of_week] += 1
@@ -323,12 +425,13 @@ def calculate_emoji_stats(messages: List[Dict], guild_id: Optional[str] = None) 
         messages_with_max = [e for e in emoji_per_message if e['emoji_count'] == max_emoji_count]
         most_emoji_msg = random.choice(messages_with_max)['message']
         
-        # Build link
+        # Build link (same format as snapshot feature)
         most_emoji_link = None
-        if most_emoji_msg.get('guild_id') or guild_id:
-            guild = most_emoji_msg.get('guild_id') or guild_id
-            if most_emoji_msg.get('channel_id') and most_emoji_msg.get('message_id'):
-                most_emoji_link = f"https://discord.com/channels/{guild}/{most_emoji_msg.get('channel_id')}/{most_emoji_msg.get('message_id')}"
+        emoji_guild_id = most_emoji_msg.get('guild_id') or guild_id
+        emoji_channel_id = most_emoji_msg.get('channel_id')
+        emoji_message_id = most_emoji_msg.get('message_id')
+        if emoji_guild_id and emoji_channel_id and emoji_message_id:
+            most_emoji_link = f"https://discord.com/channels/{emoji_guild_id}/{emoji_channel_id}/{emoji_message_id}"
         
         most_emoji = {
             'content': most_emoji_msg.get('content', ''),
@@ -349,15 +452,24 @@ def calculate_emoji_stats(messages: List[Dict], guild_id: Optional[str] = None) 
 
 
 def calculate_word_frequency(messages: List[Dict]) -> List[Dict]:
-    """Calculate top words excluding filler words."""
+    """Calculate top words excluding filler words and common glue words."""
     all_words = []
     
     for msg in messages:
         content = msg.get('content', '').lower()
-        # Simple word extraction - split on whitespace and punctuation
-        words = re.findall(r'\b[a-z]+\b', content)
-        # Filter out filler words
-        words = [w for w in words if w not in FILLER_WORDS and len(w) > 2]
+        # Extract words - handle contractions and split on punctuation
+        # Remove URLs, mentions, and emoji-like patterns first
+        content = re.sub(r'https?://\S+|@\w+|#\w+', '', content)
+        words = re.findall(r'\b[a-z]+(?:[’\']?[a-z]+)?\b', content)
+        
+        # Filter out filler words and very short words (must be 3+ chars)
+        words = [
+            w for w in words 
+            if len(w) >= 3 
+            and w not in FILLER_WORDS 
+            and not w.isdigit()  # Exclude pure numbers
+            and not re.match(r'^[a-z]{1,2}$', w)  # Exclude 1-2 letter words
+        ]
         all_words.extend(words)
     
     word_counts = Counter(all_words)

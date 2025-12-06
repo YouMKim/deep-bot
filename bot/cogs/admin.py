@@ -7,6 +7,7 @@ from storage.messages import MessageStorage
 from bot.loaders.message_loader import MessageLoader
 from ai.service import AIService
 from bot.utils.discord_utils import format_discord_message
+from bot.utils.year_stats import calculate_user_stats
 from typing import List
 
 
@@ -1440,6 +1441,97 @@ class Admin(commands.Cog):
         except Exception as e:
             self.logger.error(f"Error re-indexing bot knowledge: {e}", exc_info=True)
             await status_msg.edit(content=f"❌ Error: {e}")
+
+    @commands.command(name='year_review_user', help='Generate year-in-review for a specific user (Admin only). Usage: !year_review_user @user or !year_review_user <user_id>')
+    @commands.is_owner()
+    async def year_review_user(self, ctx, user_mention_or_id: str = None):
+        """Generate year-in-review for a specific user."""
+        try:
+            if not user_mention_or_id:
+                await ctx.send("❌ Please specify a user! Usage: `!year_review_user @user` or `!year_review_user <user_id>`")
+                return
+            
+            status_msg = await ctx.send("🔄 Processing...")
+            
+            # Try to parse user mention or ID
+            user_id = None
+            user_display_name = None
+            
+            # Check if it's a mention
+            if user_mention_or_id.startswith('<@') and user_mention_or_id.endswith('>'):
+                # Extract user ID from mention
+                user_id = user_mention_or_id.strip('<@!>')
+                try:
+                    user_obj = await self.bot.fetch_user(int(user_id))
+                    user_display_name = user_obj.display_name
+                except:
+                    await status_msg.edit(content="❌ Could not find user from mention!")
+                    return
+            else:
+                # Try as raw user ID
+                try:
+                    user_id = str(int(user_mention_or_id))
+                    user_obj = await self.bot.fetch_user(int(user_id))
+                    user_display_name = user_obj.display_name
+                except:
+                    await status_msg.edit(content="❌ Invalid user ID or mention!")
+                    return
+            
+            # Date range
+            start_date = datetime(2025, 1, 1, 0, 0, 0)
+            end_date = datetime(2025, 12, 4, 23, 59, 59)
+            start_date_str = start_date.isoformat()
+            end_date_str = end_date.isoformat()
+            
+            await status_msg.edit(content=f"📊 Generating year-in-review for **{user_display_name}**...")
+            
+            # Get user's messages
+            messages = self.message_storage.get_user_messages_by_date_range(
+                author_id=user_id,
+                start_date=start_date_str,
+                end_date=end_date_str
+            )
+            
+            if not messages:
+                await status_msg.edit(content=f"ℹ️ No messages found for **{user_display_name}** in date range (Jan 1 - Dec 4, 2025).")
+                return
+            
+            # Get guild_id and calculate stats
+            guild_id = messages[0].get('guild_id') if messages else None
+            stats = calculate_user_stats(messages, guild_id=guild_id)
+            
+            # Get channel to post to
+            channel_id = self.config.YEAR_IN_REVIEW_CHANNEL_ID or self.config.SNAPSHOT_CHANNEL_ID
+            if not channel_id or channel_id <= 0:
+                await status_msg.edit(content="❌ YEAR_IN_REVIEW_CHANNEL_ID not configured!")
+                return
+            
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                await status_msg.edit(content=f"❌ Year-in-review channel {channel_id} not found!")
+                return
+            
+            # Post year-in-review
+            await self._post_year_in_review(channel, user_display_name, stats, guild_id)
+            
+            await status_msg.edit(content=f"✅ Successfully generated year-in-review for **{user_display_name}**! Posted to {channel.mention}")
+            
+        except Exception as e:
+            self.logger.error(f"Error generating year-in-review for user: {e}", exc_info=True)
+            await status_msg.edit(content=f"❌ Error: {e}")
+
+    async def _post_year_in_review(
+        self,
+        channel: discord.TextChannel,
+        user_display_name: str,
+        stats: dict,
+        guild_id: str = None
+    ):
+        """Post year-in-review statistics as a Discord embed. (Reused from CronjobTasks)"""
+        # Import and use CronjobTasks method
+        from bot.cronjob_tasks import CronjobTasks
+        cronjob_tasks = CronjobTasks(self.bot)
+        await cronjob_tasks.post_year_in_review(channel, user_display_name, stats, guild_id)
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))

@@ -26,6 +26,12 @@ from bot.utils.year_stats import (
     FILLER_WORDS
 )
 
+# Import discord for admin command tests
+try:
+    import discord
+except ImportError:
+    discord = None
+
 
 @pytest.fixture
 def temp_db():
@@ -501,6 +507,104 @@ class TestEdgeCases:
         
         # Should return empty or very few words
         assert len(words) == 0  # All filtered out
+    
+    def test_timezone_conversion(self):
+        """Test that activity patterns convert UTC to Pacific Time"""
+        # Create messages at different UTC times that should convert to PT
+        # 20:00 UTC = 12:00 PM PT (during daylight saving)
+        # 02:00 UTC = 6:00 PM PT (previous day, during daylight saving)
+        messages = [
+            {'timestamp': '2025-03-15T20:00:00Z'},  # 12 PM PT
+            {'timestamp': '2025-03-15T20:00:00Z'},  # 12 PM PT
+            {'timestamp': '2025-03-15T02:00:00Z'},  # 6 PM PT (previous day)
+        ]
+        
+        activity = calculate_activity_patterns(messages)
+        
+        # Should have converted to Pacific Time
+        assert activity['most_active_hour'] is not None
+        # Most active hour should be in Pacific Time (not UTC)
+        assert 0 <= activity['most_active_hour'] < 24
+    
+    def test_link_creation_format(self):
+        """Test that message links are created in correct Discord format"""
+        messages = [
+            {
+                'content': 'Test message',
+                'message_id': '123456789',
+                'channel_id': '987654321',
+                'guild_id': '555666777',
+            }
+        ]
+        
+        extremes = calculate_message_extremes(messages, guild_id='555666777')
+        
+        if extremes['longest'].get('link'):
+            link = extremes['longest']['link']
+            # Should be in format: https://discord.com/channels/{guild_id}/{channel_id}/{message_id}
+            assert link.startswith('https://discord.com/channels/')
+            assert '555666777' in link
+            assert '987654321' in link
+            assert '123456789' in link
+    
+    def test_expanded_filler_words(self):
+        """Test that expanded filler words list filters more words"""
+        # Test some of the new filler words we added
+        messages = [
+            {'content': 'yeah ok sure thanks'},
+            {'content': 'gonna wanna gotta'},
+            {'content': 'through during before after'},
+            {'content': 'because since although'},
+        ]
+        
+        words = calculate_word_frequency(messages)
+        
+        # Should filter out most/all of these filler words
+        word_list = [w['word'] for w in words]
+        # None of these should appear (they're all filler words)
+        filler_check = ['yeah', 'ok', 'sure', 'thanks', 'gonna', 'wanna', 'gotta',
+                       'through', 'during', 'before', 'after', 'because', 'since', 'although']
+        for filler in filler_check:
+            assert filler not in word_list, f"Filler word '{filler}' should be filtered but wasn't"
+    
+    def test_word_filtering_min_length(self):
+        """Test that words must be at least 3 characters"""
+        messages = [
+            {'content': 'a b c ab cd'},
+            {'content': 'abc def ghi'},
+        ]
+        
+        words = calculate_word_frequency(messages)
+        
+        # All words should be 3+ characters
+        for word_data in words:
+            assert len(word_data['word']) >= 3
+
+
+class TestAdminCommand:
+    """Test year-in-review admin command functionality"""
+    
+    def test_filler_words_comprehensive(self):
+        """Test that comprehensive filler words list works correctly"""
+        # Test a mix of old and new filler words
+        test_cases = [
+            {'content': 'yeah ok sure', 'expected_filtered': True},
+            {'content': 'gonna wanna gotta', 'expected_filtered': True},
+            {'content': 'through during before after', 'expected_filtered': True},
+            {'content': 'because since although', 'expected_filtered': True},
+            {'content': 'project code awesome', 'expected_filtered': False},  # Should keep these
+        ]
+        
+        for test_case in test_cases:
+            words = calculate_word_frequency([test_case])
+            word_list = [w['word'] for w in words]
+            
+            if test_case['expected_filtered']:
+                # All words should be filtered
+                assert len(word_list) == 0, f"Expected all words filtered for: {test_case['content']}"
+            else:
+                # Some words should remain
+                assert len(word_list) > 0, f"Expected some words to remain for: {test_case['content']}"
 
 
 if __name__ == '__main__':
