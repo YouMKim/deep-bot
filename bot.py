@@ -179,7 +179,9 @@ class DeepBot(commands.Bot):
         # #region agent log
         import psutil
         process = psutil.Process()
-        _dbg_log("bot.py:setup_hook:start", "Setup hook starting", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
+        rss_mb = process.memory_info().rss / 1024 / 1024
+        logger.info(f"[MEMORY DEBUG] Setup hook starting (RSS: {rss_mb:.1f}MB)")
+        _dbg_log("bot.py:setup_hook:start", "Setup hook starting", {"rss_mb": rss_mb}, "A")
         # #endregion
         
         # Load configuration
@@ -192,7 +194,7 @@ class DeepBot(commands.Bot):
         # Load cogs
         try:
             await self.load_extension("bot.cogs.basic")
-            logger.info("Loaded basic cog")
+            logger.info(f"[MEMORY DEBUG] Loaded basic cog (RSS: {process.memory_info().rss / 1024 / 1024:.1f}MB)")
             # #region agent log
             _dbg_log("bot.py:setup_hook:basic", "Loaded basic cog", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
             # #endregion
@@ -200,7 +202,7 @@ class DeepBot(commands.Bot):
             logger.error(f"Failed to load basic cog: {e}")
         try:
             await self.load_extension("bot.cogs.summary")
-            logger.info("Loaded summary cog")
+            logger.info(f"[MEMORY DEBUG] Loaded summary cog - uses shared ChunkedMemoryService (RSS: {process.memory_info().rss / 1024 / 1024:.1f}MB)")
             # #region agent log
             _dbg_log("bot.py:setup_hook:summary", "Loaded summary cog (creates ChunkedMemoryService)", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
             # #endregion
@@ -208,7 +210,7 @@ class DeepBot(commands.Bot):
             logger.error(f"Failed to load summary cog: {e}")
         try:
             await self.load_extension("bot.cogs.admin")
-            logger.info("Loaded admin cog")
+            logger.info(f"[MEMORY DEBUG] Loaded admin cog (RSS: {process.memory_info().rss / 1024 / 1024:.1f}MB)")
             # #region agent log
             _dbg_log("bot.py:setup_hook:admin", "Loaded admin cog", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
             # #endregion
@@ -216,7 +218,7 @@ class DeepBot(commands.Bot):
             logger.error(f"Failed to load admin cog: {e}")
         try:
             await self.load_extension("bot.cogs.rag")
-            logger.info("Loaded rag cog")
+            logger.info(f"[MEMORY DEBUG] Loaded RAG cog - reuses shared ChunkedMemoryService (RSS: {process.memory_info().rss / 1024 / 1024:.1f}MB)")
             # #region agent log
             _dbg_log("bot.py:setup_hook:rag", "Loaded RAG cog (creates RAGPipeline -> ChunkedMemoryService)", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
             # #endregion
@@ -224,7 +226,7 @@ class DeepBot(commands.Bot):
             logger.error(f"Failed to load rag cog: {e}")
         try:
             await self.load_extension("bot.cogs.chatbot")
-            logger.info("Loaded chatbot cog")
+            logger.info(f"[MEMORY DEBUG] Loaded chatbot cog - reuses shared ChunkedMemoryService (RSS: {process.memory_info().rss / 1024 / 1024:.1f}MB)")
             # #region agent log
             _dbg_log("bot.py:setup_hook:chatbot", "Loaded chatbot cog (creates RAGPipeline -> ChunkedMemoryService)", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
             # #endregion
@@ -242,7 +244,9 @@ class DeepBot(commands.Bot):
             logger.error(f"Failed to load resolutions cog: {e}")
         
         # #region agent log
-        _dbg_log("bot.py:setup_hook:complete", "All cogs loaded - final memory", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
+        final_rss = process.memory_info().rss / 1024 / 1024
+        logger.info(f"[MEMORY DEBUG] ====== ALL COGS LOADED - FINAL RSS: {final_rss:.1f}MB ======")
+        _dbg_log("bot.py:setup_hook:complete", "All cogs loaded - final memory", {"rss_mb": final_rss}, "A")
         # #endregion
 
 
