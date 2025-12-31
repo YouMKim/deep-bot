@@ -301,8 +301,8 @@ class Admin(commands.Cog):
                 # Create background task for chunking
                 async def chunk_in_background():
                     try:
-                        from storage.chunked_memory import ChunkedMemoryService
-                        chunked_service = ChunkedMemoryService(config=self.config)
+                        from storage.chunked_memory.shared import get_shared_chunked_memory_service
+                        chunked_service = get_shared_chunked_memory_service()  # Reuse shared instance
                         
                         # Progress callback for chunking
                         chunking_status_msg = None
@@ -483,8 +483,8 @@ class Admin(commands.Cog):
                     # Stage 2: Chunk and embed (only if messages were loaded)
                     if channel_stats.get('successfully_loaded', 0) > 0:
                         try:
-                            from storage.chunked_memory import ChunkedMemoryService
-                            chunked_service = ChunkedMemoryService(config=self.config)
+                            from storage.chunked_memory.shared import get_shared_chunked_memory_service
+                            chunked_service = get_shared_chunked_memory_service()  # Reuse shared instance
                             
                             # Run chunking synchronously (we're already in a loop)
                             chunk_stats = await chunked_service.ingest_channel(
@@ -777,8 +777,8 @@ class Admin(commands.Cog):
                 )
             
             # Get vector storage stats
-            from storage.chunked_memory import ChunkedMemoryService
-            chunked_service = ChunkedMemoryService(config=self.config)
+            from storage.chunked_memory.shared import get_shared_chunked_memory_service
+            chunked_service = get_shared_chunked_memory_service()  # Reuse shared instance
             strategy_stats = chunked_service.get_strategy_stats()
             
             stats_info = []
@@ -921,8 +921,8 @@ class Admin(commands.Cog):
             # Create background task for chunking
             async def chunk_in_background():
                 try:
-                    from storage.chunked_memory import ChunkedMemoryService
-                    chunked_service = ChunkedMemoryService(config=self.config)
+                    from storage.chunked_memory.shared import get_shared_chunked_memory_service
+                    chunked_service = get_shared_chunked_memory_service()  # Reuse shared instance
                     
                     # Progress callback for chunking
                     chunking_status_msg = None

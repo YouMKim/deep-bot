@@ -17,7 +17,7 @@ class EmbeddingService:
     """Service for embedding documents with error recovery, batching, and caching."""
 
     # Class-level cache settings
-    QUERY_CACHE_SIZE = 500  # Max number of query embeddings to cache
+    QUERY_CACHE_SIZE = 100  # Reduced from 500 to save ~600KB memory
 
     def __init__(
         self,

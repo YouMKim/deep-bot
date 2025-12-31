@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord.ext.commands import cooldown, BucketType
 import asyncio
 from ai.service import AIService
-from storage.chunked_memory import ChunkedMemoryService
+from storage.chunked_memory.shared import get_shared_chunked_memory_service
 from storage.messages.messages import MessageStorage
 from bot.loaders.message_loader import MessageLoader
 from bot.utils.discord_utils import format_discord_message
@@ -28,9 +28,9 @@ class Summary(commands.Cog):
         self.config = Config
         self.logger = logging.getLogger(__name__)
         
-        # Initialize ChunkedMemoryService with error handling for ChromaDB issues
+        # Use shared ChunkedMemoryService singleton to reduce memory usage
         try:
-            self.chunked_memory_service = ChunkedMemoryService(config=self.config)
+            self.chunked_memory_service = get_shared_chunked_memory_service()
         except (KeyError, AttributeError, TypeError, RuntimeError) as e:
             error_str = str(e).lower()
             # Check for various frozenset-related errors:

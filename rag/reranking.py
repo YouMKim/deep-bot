@@ -2,6 +2,16 @@ from typing import List, Dict
 from sentence_transformers import CrossEncoder
 import logging
 
+# #region agent log
+import json as _dbg_json
+def _dbg_log(location, message, data=None, hypothesis_id=None):
+    try:
+        log_entry = {"location": location, "message": message, "data": data or {}, "timestamp": __import__('time').time(), "hypothesisId": hypothesis_id, "sessionId": "debug-session"}
+        with open("/Users/youmyeongkim/projects/deep-bot/.cursor/debug.log", "a") as f:
+            f.write(_dbg_json.dumps(log_entry) + "\n")
+    except: pass
+# #endregion
+
 
 class ReRankingService:
     """
@@ -15,10 +25,20 @@ class ReRankingService:
         self,
         model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     ):
+        # #region agent log
+        import psutil
+        process = psutil.Process()
+        _dbg_log("reranking.py:init:start", "Creating CrossEncoder (reranker) model", {"rss_mb_before": process.memory_info().rss / 1024 / 1024, "model_name": model_name}, "D")
+        # #endregion
+        
         self.logger = logging.getLogger(__name__)
         self.logger.info(f"Loading cross-encoder model: {model_name}")
         self.model = CrossEncoder(model_name)
         self.model_name = model_name
+        
+        # #region agent log
+        _dbg_log("reranking.py:init:complete", "CrossEncoder model loaded", {"rss_mb_after": process.memory_info().rss / 1024 / 1024}, "D")
+        # #endregion
 
     def rerank(
         self,

@@ -61,7 +61,7 @@ class SessionManager:
         """
         # Force cleanup if too many sessions (prevent memory issues)
         # Lowered threshold for proactive cleanup
-        MAX_SESSIONS = 500
+        MAX_SESSIONS = 50  # Reduced from 500 to save memory
         async with self._lock:
             session_count = len(self.sessions)
             if session_count > MAX_SESSIONS:

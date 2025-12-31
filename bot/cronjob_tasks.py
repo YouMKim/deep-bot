@@ -13,7 +13,7 @@ from discord.ext import commands
 from config import Config
 from storage.messages import MessageStorage
 from bot.loaders.message_loader import MessageLoader
-from storage.chunked_memory import ChunkedMemoryService
+from storage.chunked_memory.shared import get_shared_chunked_memory_service
 from bot.utils.year_stats import calculate_user_stats
 from storage.resolutions import ResolutionStorage
 from bot.cogs.resolution_views import (
@@ -90,9 +90,9 @@ class CronjobTasks:
                     # Stage 2: Chunk and embed (only if messages were loaded)
                     if channel_stats.get('successfully_loaded', 0) > 0:
                         try:
-                            # Reuse service instance to avoid memory bloat
+                            # Use shared singleton instance to avoid memory bloat
                             if self._chunked_service is None:
-                                self._chunked_service = ChunkedMemoryService(config=Config)
+                                self._chunked_service = get_shared_chunked_memory_service()
                             
                             chunk_stats = await self._chunked_service.ingest_channel(
                                 channel_id=str(channel.id)

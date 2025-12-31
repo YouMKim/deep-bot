@@ -3,8 +3,22 @@ from typing import Any, Dict, List, Optional
 
 from embedding.base import EmbeddingBase
 
+# #region agent log
+import json as _dbg_json
+def _dbg_log(location, message, data=None, hypothesis_id=None):
+    try:
+        log_entry = {"location": location, "message": message, "data": data or {}, "timestamp": __import__('time').time(), "hypothesisId": hypothesis_id, "sessionId": "debug-session"}
+        with open("/Users/youmyeongkim/projects/deep-bot/.cursor/debug.log", "a") as f:
+            f.write(_dbg_json.dumps(log_entry) + "\n")
+    except: pass
+# #endregion
+
 
 class SentenceTransformerEmbedder(EmbeddingBase):
+    # #region agent log
+    _instance_count = 0  # Track how many instances are created
+    # #endregion
+    
     def __init__(
         self,
         model_name: str = "all-MiniLM-L6-v2",
@@ -12,6 +26,14 @@ class SentenceTransformerEmbedder(EmbeddingBase):
         device: Optional[str] = None,
         encode_kwargs: Optional[Dict[str, Any]] = None,
     ):
+        # #region agent log
+        import psutil
+        SentenceTransformerEmbedder._instance_count += 1
+        instance_num = SentenceTransformerEmbedder._instance_count
+        process = psutil.Process()
+        _dbg_log("sentence_transformer.py:init:start", f"Creating SentenceTransformer instance #{instance_num}", {"rss_mb_before": process.memory_info().rss / 1024 / 1024, "instance_num": instance_num}, "A")
+        # #endregion
+        
         # Lazy import to avoid errors if sentence-transformers/tokenizers not installed
         try:
             from sentence_transformers import SentenceTransformer
@@ -40,6 +62,10 @@ class SentenceTransformerEmbedder(EmbeddingBase):
         if device is not None:
             model_init_kwargs["device"] = device
         self._model = SentenceTransformer(self.model_name, **model_init_kwargs)
+        
+        # #region agent log
+        _dbg_log("sentence_transformer.py:init:complete", f"SentenceTransformer instance #{instance_num} loaded", {"rss_mb_after": process.memory_info().rss / 1024 / 1024, "instance_num": instance_num, "model_name": model_name}, "A")
+        # #endregion
 
         default_encode_kwargs: Dict[str, Any] = {
             "convert_to_numpy": True,

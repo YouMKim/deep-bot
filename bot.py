@@ -18,6 +18,17 @@ from discord.ext.commands import (
 from config import Config
 from bot.cronjob_tasks import CronjobTasks
 
+# #region agent log
+import os as _dbg_os
+import json as _dbg_json
+def _dbg_log(location, message, data=None, hypothesis_id=None):
+    try:
+        log_entry = {"location": location, "message": message, "data": data or {}, "timestamp": __import__('time').time(), "hypothesisId": hypothesis_id, "sessionId": "debug-session"}
+        with open("/Users/youmyeongkim/projects/deep-bot/.cursor/debug.log", "a") as f:
+            f.write(_dbg_json.dumps(log_entry) + "\n")
+    except: pass
+# #endregion
+
 # Set up logging
 # In Railway/Docker, file logging may not persist, so we primarily use stdout
 # Railway captures stdout/stderr automatically
@@ -165,6 +176,12 @@ class DeepBot(commands.Bot):
 
     async def setup_hook(self):
         """Called when the bot is starting up."""
+        # #region agent log
+        import psutil
+        process = psutil.Process()
+        _dbg_log("bot.py:setup_hook:start", "Setup hook starting", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
+        # #endregion
+        
         # Load configuration
         Config.load_blacklist()
         
@@ -176,26 +193,41 @@ class DeepBot(commands.Bot):
         try:
             await self.load_extension("bot.cogs.basic")
             logger.info("Loaded basic cog")
+            # #region agent log
+            _dbg_log("bot.py:setup_hook:basic", "Loaded basic cog", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
+            # #endregion
         except Exception as e:
             logger.error(f"Failed to load basic cog: {e}")
         try:
             await self.load_extension("bot.cogs.summary")
             logger.info("Loaded summary cog")
+            # #region agent log
+            _dbg_log("bot.py:setup_hook:summary", "Loaded summary cog (creates ChunkedMemoryService)", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
+            # #endregion
         except Exception as e:
             logger.error(f"Failed to load summary cog: {e}")
         try:
             await self.load_extension("bot.cogs.admin")
             logger.info("Loaded admin cog")
+            # #region agent log
+            _dbg_log("bot.py:setup_hook:admin", "Loaded admin cog", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
+            # #endregion
         except Exception as e:
             logger.error(f"Failed to load admin cog: {e}")
         try:
             await self.load_extension("bot.cogs.rag")
             logger.info("Loaded rag cog")
+            # #region agent log
+            _dbg_log("bot.py:setup_hook:rag", "Loaded RAG cog (creates RAGPipeline -> ChunkedMemoryService)", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
+            # #endregion
         except Exception as e:
             logger.error(f"Failed to load rag cog: {e}")
         try:
             await self.load_extension("bot.cogs.chatbot")
             logger.info("Loaded chatbot cog")
+            # #region agent log
+            _dbg_log("bot.py:setup_hook:chatbot", "Loaded chatbot cog (creates RAGPipeline -> ChunkedMemoryService)", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
+            # #endregion
         except Exception as e:
             logger.error(f"Failed to load chatbot cog: {e}")
         try:
@@ -208,6 +240,10 @@ class DeepBot(commands.Bot):
             logger.info("Loaded resolutions cog")
         except Exception as e:
             logger.error(f"Failed to load resolutions cog: {e}")
+        
+        # #region agent log
+        _dbg_log("bot.py:setup_hook:complete", "All cogs loaded - final memory", {"rss_mb": process.memory_info().rss / 1024 / 1024}, "A")
+        # #endregion
 
 
 async def main():

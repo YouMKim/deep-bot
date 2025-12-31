@@ -1,6 +1,6 @@
 import logging
 from typing import List, Dict, Optional, TYPE_CHECKING
-from storage.chunked_memory import ChunkedMemoryService
+from storage.chunked_memory.shared import get_shared_chunked_memory_service
 from ai.service import AIService
 from storage.messages.messages import MessageStorage
 from .models import RAGConfig, RAGResult
@@ -12,11 +12,14 @@ from .validation import QueryValidator
 if TYPE_CHECKING:
     from config import Config
 
+# Module-level shared reranker to avoid loading multiple times
+_shared_reranker = None
+
 class RAGPipeline:
     
     def __init__(
         self,
-        chunked_memory_service: Optional[ChunkedMemoryService] = None,
+        chunked_memory_service = None,
         ai_service: Optional[AIService] = None,
         message_storage: Optional[MessageStorage] = None,
         config: Optional['Config'] = None,
@@ -25,9 +28,9 @@ class RAGPipeline:
         
         self.config = config or ConfigClass
         self.logger = logging.getLogger(__name__)
-        # Initialize ChunkedMemoryService with error handling for ChromaDB issues
+        # Use shared ChunkedMemoryService singleton to reduce memory usage
         try:
-            self.chunked_memory = chunked_memory_service or ChunkedMemoryService(config=self.config)
+            self.chunked_memory = chunked_memory_service or get_shared_chunked_memory_service()
         except (KeyError, AttributeError, TypeError, RuntimeError) as e:
             from storage.utils import handle_chromadb_init_error
             is_chromadb_error, runtime_error = handle_chromadb_init_error(e, "RAGPipeline initialization")
@@ -291,19 +294,25 @@ class RAGPipeline:
         # Re-rank if enabled (AFTER retrieval)
         # Run reranking in executor to avoid blocking event loop
         if config.use_reranking and chunks:
+            global _shared_reranker
             if self.reranker is None:
-                # Lazy import to avoid errors if sentence-transformers not installed
-                try:
-                    from rag.reranking import ReRankingService
-                    self.reranker = ReRankingService()
-                except ImportError as e:
-                    self.logger.error(
-                        f"Failed to import ReRankingService: {e}. "
-                        "Reranking requires sentence-transformers. "
-                        "Install it with: pip install sentence-transformers tokenizers"
-                    )
-                    # Disable reranking for this request
-                    return chunks
+                # Use shared reranker to avoid loading model multiple times
+                if _shared_reranker is not None:
+                    self.reranker = _shared_reranker
+                else:
+                    # Lazy import to avoid errors if sentence-transformers not installed
+                    try:
+                        from rag.reranking import ReRankingService
+                        self.reranker = ReRankingService()
+                        _shared_reranker = self.reranker  # Cache for other pipelines
+                    except ImportError as e:
+                        self.logger.error(
+                            f"Failed to import ReRankingService: {e}. "
+                            "Reranking requires sentence-transformers. "
+                            "Install it with: pip install sentence-transformers tokenizers"
+                        )
+                        # Disable reranking for this request
+                        return chunks
 
             import asyncio
             loop = asyncio.get_event_loop()

@@ -66,7 +66,7 @@ class Chatbot(commands.Cog):
         # Channel context cache: {channel_id: (context, timestamp)} with LRU eviction
         self._channel_context_cache: OrderedDict[int, Tuple[str, datetime]] = OrderedDict()
         self._cache_ttl = 30  # seconds
-        self._max_cache_size = 100  # Maximum number of channels to cache
+        self._max_cache_size = 20  # Reduced from 100 to save memory
         
         # Start background cleanup task
         self.cleanup_sessions.start()
