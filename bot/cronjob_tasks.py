@@ -15,6 +15,12 @@ from storage.messages import MessageStorage
 from bot.loaders.message_loader import MessageLoader
 from storage.chunked_memory import ChunkedMemoryService
 from bot.utils.year_stats import calculate_user_stats
+from storage.resolutions import ResolutionStorage
+from bot.cogs.resolution_views import (
+    CheckInView,
+    MultiResolutionCheckInView,
+    build_check_in_embed
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +35,14 @@ class CronjobTasks:
         self.logger = logger
         # Reuse ChunkedMemoryService to avoid creating multiple instances
         self._chunked_service = None
+        # Resolution storage for check-in tasks
+        self._resolution_storage = None
+    
+    def _get_resolution_storage(self) -> ResolutionStorage:
+        """Get or create ResolutionStorage instance."""
+        if self._resolution_storage is None:
+            self._resolution_storage = ResolutionStorage()
+        return self._resolution_storage
 
     async def load_server_task(self):
         """Load all messages from all channels in the server."""
@@ -522,6 +536,242 @@ class CronjobTasks:
             self.logger.error(f"Error posting year-in-review: {e}", exc_info=True)
             raise
 
+    # ==================== Resolution Check-in Tasks ====================
+    
+    async def resolution_check_in_task(self):
+        """
+        Post check-in prompts for resolutions that are due today.
+        
+        Groups resolutions by user and posts to the resolution channel.
+        """
+        self.logger.info("Starting resolution check-in task...")
+        
+        try:
+            # Check if resolutions are enabled
+            if not getattr(Config, 'RESOLUTION_ENABLED', True):
+                self.logger.info("Resolutions are disabled, skipping check-in task")
+                return
+            
+            # Get resolution channel
+            resolution_channel_id = getattr(Config, 'RESOLUTION_CHANNEL_ID', 0)
+            if not resolution_channel_id or resolution_channel_id <= 0:
+                self.logger.warning("RESOLUTION_CHANNEL_ID not configured, skipping check-in task")
+                return
+            
+            resolution_channel = self.bot.get_channel(resolution_channel_id)
+            if not resolution_channel:
+                self.logger.error(f"Resolution channel {resolution_channel_id} not found")
+                return
+            
+            storage = self._get_resolution_storage()
+            
+            # Get all due check-ins
+            due_resolutions = storage.get_due_check_ins()
+            
+            if not due_resolutions:
+                self.logger.info("No resolutions due for check-in today")
+                return
+            
+            self.logger.info(f"Found {len(due_resolutions)} resolutions due for check-in")
+            
+            # Group resolutions by user
+            user_resolutions: Dict[str, List[Dict]] = {}
+            for res in due_resolutions:
+                user_id = res['user_id']
+                if user_id not in user_resolutions:
+                    user_resolutions[user_id] = []
+                user_resolutions[user_id].append(res)
+            
+            # Post check-in prompts for each user
+            for user_id, resolutions in user_resolutions.items():
+                try:
+                    # Get Discord user
+                    user = self.bot.get_user(int(user_id))
+                    if not user:
+                        try:
+                            user = await self.bot.fetch_user(int(user_id))
+                        except discord.NotFound:
+                            self.logger.warning(f"User {user_id} not found, skipping")
+                            continue
+                    
+                    user_display_name = resolutions[0].get('user_display_name', user.display_name)
+                    
+                    # Build embed
+                    embed = build_check_in_embed(resolutions, user_display_name)
+                    
+                    # Create appropriate view based on number of resolutions
+                    if len(resolutions) == 1:
+                        view = CheckInView(
+                            resolution_id=resolutions[0]['id'],
+                            resolution_storage=storage
+                        )
+                    else:
+                        view = MultiResolutionCheckInView(
+                            resolutions=resolutions,
+                            resolution_storage=storage
+                        )
+                    
+                    # Post to channel with user mention
+                    message = await resolution_channel.send(
+                        content=f"{user.mention}",
+                        embed=embed,
+                        view=view
+                    )
+                    
+                    # Store message IDs for tracking
+                    for res in resolutions:
+                        storage.store_check_in_message_id(res['id'], str(message.id))
+                    
+                    self.logger.info(f"Posted check-in prompt for {user_display_name} ({len(resolutions)} resolutions)")
+                    
+                except Exception as e:
+                    self.logger.error(f"Error posting check-in for user {user_id}: {e}", exc_info=True)
+                    continue
+            
+            self.logger.info("Resolution check-in task completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error in resolution check-in task: {e}", exc_info=True)
+            raise
+    
+    async def resolution_reminder_task(self):
+        """
+        Send DM reminders for check-ins that haven't been responded to after 24 hours.
+        """
+        self.logger.info("Starting resolution reminder task...")
+        
+        try:
+            # Check if resolutions are enabled
+            if not getattr(Config, 'RESOLUTION_ENABLED', True):
+                self.logger.info("Resolutions are disabled, skipping reminder task")
+                return
+            
+            storage = self._get_resolution_storage()
+            reminder_hours = getattr(Config, 'RESOLUTION_REMINDER_HOURS', 24)
+            
+            # Get resolutions needing reminders
+            pending_reminders = storage.get_pending_reminders(hours_threshold=reminder_hours)
+            
+            if not pending_reminders:
+                self.logger.info("No resolutions need DM reminders")
+                return
+            
+            self.logger.info(f"Found {len(pending_reminders)} resolutions needing reminders")
+            
+            for res in pending_reminders:
+                try:
+                    user_id = res['user_id']
+                    
+                    # Get Discord user
+                    user = self.bot.get_user(int(user_id))
+                    if not user:
+                        try:
+                            user = await self.bot.fetch_user(int(user_id))
+                        except discord.NotFound:
+                            self.logger.warning(f"User {user_id} not found, skipping reminder")
+                            continue
+                    
+                    # Build reminder embed
+                    progress = res['checkpoint_progress']
+                    embed = discord.Embed(
+                        title="⏰ Resolution Check-in Reminder",
+                        description=f"You have an overdue check-in!",
+                        color=discord.Color.orange()
+                    )
+                    embed.add_field(
+                        name="Resolution",
+                        value=res['text'],
+                        inline=False
+                    )
+                    
+                    if progress['total'] > 0:
+                        embed.add_field(
+                            name="Progress",
+                            value=f"{progress['completed']}/{progress['total']} checkpoints ({progress['percentage']}%)",
+                            inline=True
+                        )
+                    
+                    if res['current_streak'] > 0:
+                        embed.add_field(
+                            name="🔥 Streak",
+                            value=f"{res['current_streak']} check-ins",
+                            inline=True
+                        )
+                    
+                    embed.set_footer(text="Reply in the next 24 hours or it'll be marked as skipped!")
+                    
+                    # Create view
+                    view = CheckInView(
+                        resolution_id=res['id'],
+                        resolution_storage=storage
+                    )
+                    
+                    # Send DM
+                    try:
+                        dm_message = await user.send(embed=embed, view=view)
+                        
+                        # Mark reminder as sent
+                        storage.mark_reminder_sent(res['id'], str(dm_message.id))
+                        
+                        self.logger.info(f"Sent reminder DM to {user.display_name} for resolution {res['id']}")
+                        
+                    except discord.Forbidden:
+                        self.logger.warning(f"Cannot DM user {user_id} - DMs disabled")
+                        continue
+                    
+                except Exception as e:
+                    self.logger.error(f"Error sending reminder for resolution {res['id']}: {e}", exc_info=True)
+                    continue
+            
+            self.logger.info("Resolution reminder task completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error in resolution reminder task: {e}", exc_info=True)
+            raise
+    
+    async def resolution_auto_skip_task(self):
+        """
+        Auto-skip check-ins that haven't been responded to after 48 hours.
+        """
+        self.logger.info("Starting resolution auto-skip task...")
+        
+        try:
+            # Check if resolutions are enabled
+            if not getattr(Config, 'RESOLUTION_ENABLED', True):
+                self.logger.info("Resolutions are disabled, skipping auto-skip task")
+                return
+            
+            storage = self._get_resolution_storage()
+            auto_skip_hours = getattr(Config, 'RESOLUTION_AUTO_SKIP_HOURS', 48)
+            
+            # Get resolutions to auto-skip
+            auto_skip_candidates = storage.get_auto_skip_candidates(hours_threshold=auto_skip_hours)
+            
+            if not auto_skip_candidates:
+                self.logger.info("No resolutions need auto-skipping")
+                return
+            
+            self.logger.info(f"Found {len(auto_skip_candidates)} resolutions to auto-skip")
+            
+            for res in auto_skip_candidates:
+                try:
+                    result = storage.auto_skip_check_in(res['id'])
+                    
+                    self.logger.info(
+                        f"Auto-skipped check-in for resolution {res['id']} "
+                        f"(user: {res['user_display_name']}, streak reset from {res['current_streak']} to 0)"
+                    )
+                    
+                except Exception as e:
+                    self.logger.error(f"Error auto-skipping resolution {res['id']}: {e}", exc_info=True)
+                    continue
+            
+            self.logger.info("Resolution auto-skip task completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error in resolution auto-skip task: {e}", exc_info=True)
+            raise
+
     async def run_all_tasks(self):
         """Run all cronjob tasks."""
         self.logger.info("Starting cronjob tasks...")
@@ -534,6 +784,15 @@ class CronjobTasks:
         
         # Task 3: Year-in-review (process one user's stats)
         await self.year_in_review_task()
+        
+        # Task 4: Resolution check-ins (post prompts for due resolutions)
+        await self.resolution_check_in_task()
+        
+        # Task 5: Resolution reminders (DM users who haven't responded)
+        await self.resolution_reminder_task()
+        
+        # Task 6: Resolution auto-skip (skip check-ins after 48h)
+        await self.resolution_auto_skip_task()
         
         self.logger.info("Cronjob tasks completed successfully")
 

@@ -203,6 +203,11 @@ class DeepBot(commands.Bot):
             logger.info("Loaded social credit commands cog")
         except Exception as e:
             logger.error(f"Failed to load social credit commands cog: {e}")
+        try:
+            await self.load_extension("bot.cogs.resolutions")
+            logger.info("Loaded resolutions cog")
+        except Exception as e:
+            logger.error(f"Failed to load resolutions cog: {e}")
 
 
 async def main():
