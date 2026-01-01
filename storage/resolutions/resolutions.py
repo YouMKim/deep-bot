@@ -499,6 +499,20 @@ class ResolutionStorage(SQLiteStorage):
             conn.commit()
             return cursor.rowcount > 0
     
+    def delete_all_user_resolutions(self, user_id: str) -> int:
+        """
+        Delete all resolutions for a user.
+        
+        Returns:
+            Number of resolutions deleted
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # Cascading deletes handle checkpoints and check-ins
+            cursor.execute("DELETE FROM resolutions WHERE user_id = ?", (user_id,))
+            conn.commit()
+            return cursor.rowcount
+    
     def mark_resolution_completed(self, resolution_id: int) -> bool:
         """Mark a resolution as completed."""
         now = datetime.now().isoformat()

@@ -71,7 +71,8 @@ class Resolutions(commands.Cog):
                     "`!resolution check <id> <status> [notes]` - Record a check-in\n"
                     "`!resolution summary` - Get AI-powered progress analysis\n"
                     "`!resolution edit <id> <text>` - Edit resolution text\n"
-                    "`!resolution delete <id>` - Delete a resolution"
+                    "`!resolution delete <id>` - Delete a resolution\n"
+                    "`!resolution delete all` - Delete ALL your resolutions"
                 ),
                 inline=False
             )
@@ -371,16 +372,50 @@ class Resolutions(commands.Cog):
             logger.error(f"Error editing resolution: {e}", exc_info=True)
             await ctx.send("❌ Failed to edit resolution. Please try again.")
     
-    @resolution.command(name="delete", help="Delete a resolution")
-    async def resolution_delete(self, ctx, resolution_id: int):
+    @resolution.command(name="delete", help="Delete a resolution or all resolutions")
+    async def resolution_delete(self, ctx, target: str):
         """
-        Delete a resolution and all its checkpoints.
+        Delete a resolution or all resolutions.
         
-        Usage: !resolution delete <id>
+        Usage: !resolution delete <id> OR !resolution delete all
         """
         user_id = str(ctx.author.id)
         
         try:
+            # Handle "all" case
+            if target.lower() == "all":
+                resolutions = self.resolution_storage.get_user_resolutions(user_id, include_completed=True)
+                
+                if not resolutions:
+                    await ctx.send("❌ You don't have any resolutions to delete.")
+                    return
+                
+                # Create confirmation view for deleting all
+                from bot.cogs.resolution_views import ConfirmDeleteAllView
+                view = ConfirmDeleteAllView(
+                    user_id=user_id,
+                    resolution_storage=self.resolution_storage
+                )
+                
+                total_checkpoints = sum(r['checkpoint_progress']['total'] for r in resolutions)
+                await ctx.send(
+                    f"⚠️ **DELETE ALL RESOLUTIONS?**\n\n"
+                    f"This will permanently delete:\n"
+                    f"• {len(resolutions)} resolution(s)\n"
+                    f"• {total_checkpoints} checkpoint(s)\n"
+                    f"• All check-in history\n\n"
+                    f"**This cannot be undone!**",
+                    view=view
+                )
+                return
+            
+            # Handle single resolution deletion
+            try:
+                resolution_id = int(target)
+            except ValueError:
+                await ctx.send("❌ Invalid format. Use `!resolution delete <id>` or `!resolution delete all`")
+                return
+            
             resolution = self.resolution_storage.get_resolution(resolution_id)
             if not resolution:
                 await ctx.send("❌ Resolution not found.")
@@ -580,6 +615,8 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                             value=(
                                 "`!checkpoint add 1 \"Join a gym\"`\n"
                                 "`!checkpoint add 1 \"Exercise 3x per week\"`\n"
+                                "`!checkpoint add 1 \"Task 1\" | \"Task 2\" | \"Task 3\"` - Add multiple\n"
+                                "`!checkpoint add_weekly 1 \"Daily leetcode\"` - Add 52 weekly checkpoints\n"
                                 "`!checkpoint list 1` - See checkpoint IDs\n"
                                 "`!checkpoint complete 3` - Complete checkpoint #3"
                             ),
@@ -635,6 +672,7 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                     name="🔧 Quick Commands",
                     value=(
                         "`!checkpoint add <res_id> <text>` - Add new checkpoint\n"
+                        "`!checkpoint add_weekly <res_id> <task>` - Add 52 weekly checkpoints\n"
                         "`!checkpoint list <res_id>` - View checkpoint IDs\n"
                         "`!checkpoint complete <cp_id>` - Complete by ID"
                     ),
@@ -654,23 +692,125 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                 logger.error(f"Error showing checkpoint dropdown: {e}", exc_info=True)
                 await ctx.send("❌ Failed to load checkpoints. Please try again.")
     
-    @checkpoint.command(name="add", help="Add a checkpoint to a resolution")
+    @checkpoint.command(name="add", help="Add one or more checkpoints to a resolution")
     async def checkpoint_add(self, ctx, resolution_id: int, *, text: str):
         """
-        Add a checkpoint (sub-task) to a resolution.
+        Add checkpoint(s) to a resolution.
         
-        Usage: !checkpoint add <resolution_id> <text>
-        Example: !checkpoint add 1 "Join a gym"
+        Usage: 
+        Single: !checkpoint add <resolution_id> <text>
+        Multiple: !checkpoint add <resolution_id> <text1> | <text2> | <text3>
+        
+        Examples:
+        !checkpoint add 1 "Join a gym"
+        !checkpoint add 1 "Daily leetcode" | "Daily system design" | "March - application begins"
         """
         user_id = str(ctx.author.id)
         text = text.strip('"\'')
         
-        if len(text) < 2:
-            await ctx.send("❌ Checkpoint text is too short.")
+        # Check if multiple checkpoints (separated by |)
+        checkpoint_texts = [t.strip().strip('"\'') for t in text.split('|')]
+        
+        # Validate all checkpoints
+        for cp_text in checkpoint_texts:
+            if len(cp_text) < 2:
+                await ctx.send(f"❌ Checkpoint text is too short: \"{cp_text}\"")
+                return
+            
+            if len(cp_text) > 200:
+                await ctx.send(f"❌ Checkpoint text is too long (max 200 characters): \"{cp_text[:50]}...\"")
+                return
+        
+        try:
+            # Verify resolution belongs to user
+            resolution = self.resolution_storage.get_resolution(resolution_id)
+            if not resolution:
+                await ctx.send("❌ Resolution not found.")
+                return
+            
+            if resolution['user_id'] != user_id:
+                await ctx.send("❌ This resolution doesn't belong to you.")
+                return
+            
+            # Add all checkpoints
+            added_checkpoints = []
+            for cp_text in checkpoint_texts:
+                checkpoint_id = self.resolution_storage.add_checkpoint(
+                    resolution_id=resolution_id,
+                    text=cp_text
+                )
+                added_checkpoints.append({
+                    'id': checkpoint_id,
+                    'text': cp_text
+                })
+            
+            # Get updated progress
+            resolution = self.resolution_storage.get_resolution(resolution_id)
+            progress = resolution['checkpoint_progress']
+            
+            # Build response embed
+            if len(added_checkpoints) == 1:
+                embed = discord.Embed(
+                    title="✅ Checkpoint Added",
+                    description=f"**{added_checkpoints[0]['text']}**",
+                    color=discord.Color.green()
+                )
+            else:
+                embed = discord.Embed(
+                    title=f"✅ {len(added_checkpoints)} Checkpoints Added",
+                    description=f"Added to **{resolution['text']}**",
+                    color=discord.Color.green()
+                )
+                
+                checkpoint_list = "\n".join([f"• {cp['text']}" for cp in added_checkpoints])
+                if len(checkpoint_list) > 1024:
+                    checkpoint_list = "\n".join([f"• {cp['text'][:80]}..." if len(cp['text']) > 80 else f"• {cp['text']}" for cp in added_checkpoints])
+                
+                embed.add_field(
+                    name="Added Checkpoints",
+                    value=checkpoint_list,
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="Resolution",
+                value=resolution['text'][:100],
+                inline=False
+            )
+            embed.add_field(
+                name="Total Checkpoints",
+                value=str(progress['total']),
+                inline=True
+            )
+            
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            logger.error(f"Error adding checkpoint: {e}", exc_info=True)
+            await ctx.send("❌ Failed to add checkpoint. Please try again.")
+    
+    @checkpoint.command(name="add_weekly", aliases=["addweekly"], help="Add 52 weekly checkpoints for a daily task")
+    async def checkpoint_add_weekly(self, ctx, resolution_id: int, *, task_name: str):
+        """
+        Add 52 weekly checkpoints for a daily task.
+        
+        Usage: !checkpoint add_weekly <resolution_id> <task_name>
+        
+        This creates 52 checkpoints (Week 1, Week 2, ... Week 52) for tracking
+        daily habits on a weekly basis.
+        
+        Example: !checkpoint add_weekly 1 "Daily leetcode"
+        Creates: Week 1: Daily leetcode, Week 2: Daily leetcode, ... Week 52: Daily leetcode
+        """
+        user_id = str(ctx.author.id)
+        task_name = task_name.strip().strip('"\'')
+        
+        if len(task_name) < 2:
+            await ctx.send("❌ Task name is too short.")
             return
         
-        if len(text) > 200:
-            await ctx.send("❌ Checkpoint text is too long (max 200 characters).")
+        if len(task_name) > 150:
+            await ctx.send("❌ Task name is too long (max 150 characters).")
             return
         
         try:
@@ -684,42 +824,73 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                 await ctx.send("❌ This resolution doesn't belong to you.")
                 return
             
-            # Add checkpoint
-            checkpoint_id = self.resolution_storage.add_checkpoint(
-                resolution_id=resolution_id,
-                text=text
-            )
+            # Send status message (warn if checkpoints already exist)
+            existing_checkpoints = resolution['checkpoints']
+            if len(existing_checkpoints) > 0:
+                status_msg = await ctx.send(
+                    f"⚠️ Note: This resolution already has {len(existing_checkpoints)} checkpoint(s).\n"
+                    f"⏳ Creating 52 weekly checkpoints for '{task_name}'..."
+                )
+            else:
+                status_msg = await ctx.send(f"⏳ Creating 52 weekly checkpoints for '{task_name}'...")
+            
+            # Create 52 weekly checkpoints
+            added_count = 0
+            for week_num in range(1, 53):
+                checkpoint_text = f"Week {week_num}: {task_name}"
+                try:
+                    self.resolution_storage.add_checkpoint(
+                        resolution_id=resolution_id,
+                        text=checkpoint_text
+                    )
+                    added_count += 1
+                except Exception as e:
+                    logger.error(f"Error adding checkpoint Week {week_num}: {e}")
+                    # Continue with other weeks
             
             # Get updated progress
             resolution = self.resolution_storage.get_resolution(resolution_id)
             progress = resolution['checkpoint_progress']
             
             embed = discord.Embed(
-                title="✅ Checkpoint Added",
-                description=f"**{text}**",
+                title=f"✅ 52 Weekly Checkpoints Created!",
+                description=f"Added to **{resolution['text']}**",
                 color=discord.Color.green()
             )
+            
             embed.add_field(
-                name="Resolution",
-                value=resolution['text'][:100],
+                name="Task",
+                value=task_name,
                 inline=False
             )
+            
+            embed.add_field(
+                name="Checkpoints Created",
+                value=f"{added_count} weekly checkpoints (Week 1 - Week 52)",
+                inline=True
+            )
+            
             embed.add_field(
                 name="Total Checkpoints",
                 value=str(progress['total']),
                 inline=True
             )
+            
             embed.add_field(
-                name="Checkpoint ID",
-                value=f"#{checkpoint_id}",
-                inline=True
+                name="💡 How to Use",
+                value=(
+                    f"Complete each week's checkpoint when you've done the daily task that week.\n"
+                    f"Use `!checkpoint list {resolution_id}` to see all weekly checkpoints.\n"
+                    f"Or use `!checkpoint` for the interactive dropdown."
+                ),
+                inline=False
             )
             
-            await ctx.send(embed=embed)
+            await status_msg.edit(content=None, embed=embed)
             
         except Exception as e:
-            logger.error(f"Error adding checkpoint: {e}", exc_info=True)
-            await ctx.send("❌ Failed to add checkpoint. Please try again.")
+            logger.error(f"Error adding weekly checkpoints: {e}", exc_info=True)
+            await ctx.send("❌ Failed to add weekly checkpoints. Please try again.")
     
     @checkpoint.command(name="complete", help="Mark a checkpoint as complete")
     async def checkpoint_complete(self, ctx, checkpoint_id: int):

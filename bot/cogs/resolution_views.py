@@ -515,6 +515,46 @@ class ConfirmDeleteView(View):
         self.stop()
 
 
+class ConfirmDeleteAllView(View):
+    """View for confirming deletion of all resolutions."""
+    
+    def __init__(
+        self,
+        user_id: str,
+        resolution_storage: ResolutionStorage,
+        timeout: float = 60
+    ):
+        super().__init__(timeout=timeout)
+        self.user_id = user_id
+        self.resolution_storage = resolution_storage
+    
+    @ui.button(label="Yes, Delete All", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def confirm_delete_all(self, interaction: discord.Interaction, button: Button):
+        """Confirm deletion of all resolutions."""
+        count = self.resolution_storage.delete_all_user_resolutions(self.user_id)
+        
+        if count > 0:
+            await interaction.response.edit_message(
+                content=f"✅ Deleted all {count} resolution(s) and all associated data.",
+                view=None
+            )
+        else:
+            await interaction.response.edit_message(
+                content="❌ No resolutions found to delete.",
+                view=None
+            )
+        self.stop()
+    
+    @ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_delete_all(self, interaction: discord.Interaction, button: Button):
+        """Cancel deletion."""
+        await interaction.response.edit_message(
+            content="❌ Deletion cancelled.",
+            view=None
+        )
+        self.stop()
+
+
 def build_check_in_embed(
     resolutions: List[Dict],
     user_display_name: str
