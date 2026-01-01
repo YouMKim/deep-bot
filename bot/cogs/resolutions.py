@@ -55,16 +55,78 @@ class Resolutions(commands.Cog):
     async def resolution(self, ctx):
         """Resolution commands. Use !resolution <subcommand>."""
         if ctx.invoked_subcommand is None:
-            await ctx.send(
-                "**Resolution Commands:**\n"
-                "`!resolution set <frequency> <text>` - Create a resolution\n"
-                "`!resolution list` - View your resolutions\n"
-                "`!resolution check <id> <status>` - Record a check-in\n"
-                "`!resolution summary` - Get AI analysis of your progress\n"
-                "`!resolution delete <id>` - Delete a resolution\n\n"
-                "**Frequencies:** weekly, biweekly, monthly\n"
-                "**Statuses:** on_track, struggling"
+            embed = discord.Embed(
+                title="📋 Resolution Tracking Commands",
+                description="Track your New Year's resolutions with check-ins and checkpoints!",
+                color=discord.Color.blue()
             )
+            
+            # Main commands
+            embed.add_field(
+                name="🎯 Main Commands",
+                value=(
+                    "`!resolution set <freq> <text>` - Create a resolution\n"
+                    "`!resolution list` - View your resolutions with progress\n"
+                    "`!resolution list all` - Include completed resolutions\n"
+                    "`!resolution check <id> <status> [notes]` - Record a check-in\n"
+                    "`!resolution summary` - Get AI-powered progress analysis\n"
+                    "`!resolution edit <id> <text>` - Edit resolution text\n"
+                    "`!resolution delete <id>` - Delete a resolution"
+                ),
+                inline=False
+            )
+            
+            # Frequencies
+            embed.add_field(
+                name="📅 Check-in Frequencies",
+                value=(
+                    "**weekly** - Same day every week (e.g., every Monday)\n"
+                    "**biweekly** - Same day every 2 weeks (e.g., every other Monday)\n"
+                    "**monthly** - Same day each month (e.g., the 15th)\n\n"
+                    "💡 The check-in day is set when you create the resolution!"
+                ),
+                inline=False
+            )
+            
+            # Check-in statuses
+            embed.add_field(
+                name="✅ Check-in Statuses",
+                value=(
+                    "**on_track** - Things are going well\n"
+                    "**struggling** - Having challenges (still counts for streak!)\n\n"
+                    "🔥 Both statuses keep your streak alive!"
+                ),
+                inline=False
+            )
+            
+            # Features
+            embed.add_field(
+                name="🌟 Features",
+                value=(
+                    "• **Checkpoints** - Break goals into sub-tasks\n"
+                    "• **Streaks** - Track consecutive check-ins\n"
+                    "• **Milestones** - Celebrate 25%, 50%, 75%, 100% progress\n"
+                    "• **Auto-reminders** - DM reminders if you miss a check-in\n"
+                    "• **AI Summary** - Personalized progress insights"
+                ),
+                inline=False
+            )
+            
+            # Examples
+            embed.add_field(
+                name="💡 Examples",
+                value=(
+                    "`!resolution set weekly \"Exercise 3x per week\"`\n"
+                    "`!resolution set monthly \"Read 12 books this year\"`\n"
+                    "`!resolution check 1 on_track \"Did 3 workouts!\"`\n"
+                    "`!resolution summary`"
+                ),
+                inline=False
+            )
+            
+            embed.set_footer(text="Use !checkpoint to manage sub-tasks • Check-ins happen automatically on your schedule!")
+            
+            await ctx.send(embed=embed)
     
     @resolution.command(name="set", help="Create a new resolution")
     async def resolution_set(self, ctx, frequency: str, *, text: str):
@@ -481,26 +543,112 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                     # Check if user has any resolutions
                     resolutions = self.resolution_storage.get_user_resolutions(user_id)
                     if not resolutions:
-                        await ctx.send(
-                            "❌ You don't have any resolutions yet.\n"
-                            "Create one with `!resolution set <frequency> <text>`"
+                        # Show help embed when no resolutions exist
+                        embed = discord.Embed(
+                            title="📝 Checkpoint Commands",
+                            description="Checkpoints are sub-tasks that help you break down your resolutions into manageable steps!",
+                            color=discord.Color.blue()
                         )
+                        
+                        embed.add_field(
+                            name="🎯 Getting Started",
+                            value=(
+                                "1. Create a resolution first:\n"
+                                "   `!resolution set weekly \"Your goal\"`\n\n"
+                                "2. Get the Resolution ID from:\n"
+                                "   `!resolution list`\n\n"
+                                "3. Add checkpoints:\n"
+                                "   `!checkpoint add <res_id> \"Sub-task\"`"
+                            ),
+                            inline=False
+                        )
+                        
+                        embed.add_field(
+                            name="📋 Checkpoint Commands",
+                            value=(
+                                "`!checkpoint` - Interactive dropdown to complete checkpoints\n"
+                                "`!checkpoint add <res_id> <text>` - Add a sub-task\n"
+                                "`!checkpoint complete <cp_id>` - Mark checkpoint done\n"
+                                "`!checkpoint list <res_id>` - View all checkpoints\n"
+                                "`!checkpoint delete <cp_id>` - Remove a checkpoint"
+                            ),
+                            inline=False
+                        )
+                        
+                        embed.add_field(
+                            name="💡 Examples",
+                            value=(
+                                "`!checkpoint add 1 \"Join a gym\"`\n"
+                                "`!checkpoint add 1 \"Exercise 3x per week\"`\n"
+                                "`!checkpoint list 1` - See checkpoint IDs\n"
+                                "`!checkpoint complete 3` - Complete checkpoint #3"
+                            ),
+                            inline=False
+                        )
+                        
+                        embed.add_field(
+                            name="🏆 Milestones",
+                            value=(
+                                "Celebrate when you hit:\n"
+                                "• 25% complete - Great start!\n"
+                                "• 50% complete - Halfway there!\n"
+                                "• 75% complete - Almost there!\n"
+                                "• 100% complete - Resolution complete! 🎉"
+                            ),
+                            inline=False
+                        )
+                        
+                        embed.set_footer(text="Use !resolution set to create your first resolution!")
+                        
+                        await ctx.send(embed=embed)
                     else:
-                        await ctx.send(
-                            "🎉 All your checkpoints are complete! Great job!\n"
-                            "Add more with `!checkpoint add <resolution_id> <text>`"
+                        # Show help embed when all checkpoints are complete
+                        embed = discord.Embed(
+                            title="🎉 All Checkpoints Complete!",
+                            description="Great job! You've finished all your checkpoints.",
+                            color=discord.Color.gold()
                         )
+                        
+                        embed.add_field(
+                            name="✨ What's Next?",
+                            value=(
+                                "Add more checkpoints:\n"
+                                "`!checkpoint add <res_id> \"New sub-task\"`\n\n"
+                                "Or view your progress:\n"
+                                "`!resolution list` - See all resolutions\n"
+                                "`!resolution summary` - Get AI analysis"
+                            ),
+                            inline=False
+                        )
+                        
+                        await ctx.send(embed=embed)
                     return
+                
+                # Show help embed with dropdown
+                embed = discord.Embed(
+                    title="📝 Complete a Checkpoint",
+                    description="Use the dropdown below to mark a checkpoint as complete, or use commands:",
+                    color=discord.Color.blue()
+                )
+                
+                embed.add_field(
+                    name="🔧 Quick Commands",
+                    value=(
+                        "`!checkpoint add <res_id> <text>` - Add new checkpoint\n"
+                        "`!checkpoint list <res_id>` - View checkpoint IDs\n"
+                        "`!checkpoint complete <cp_id>` - Complete by ID"
+                    ),
+                    inline=False
+                )
+                
+                embed.set_footer(text="Select from dropdown below, or use commands above!")
                 
                 view = CheckpointView(
                     checkpoints=checkpoints,
                     resolution_storage=self.resolution_storage
                 )
                 
-                await ctx.send(
-                    "**Select a checkpoint to mark as complete:**",
-                    view=view
-                )
+                await ctx.send(embed=embed, view=view)
                 
             except Exception as e:
                 logger.error(f"Error showing checkpoint dropdown: {e}", exc_info=True)

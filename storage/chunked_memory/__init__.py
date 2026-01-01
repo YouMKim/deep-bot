@@ -27,25 +27,11 @@ from .ingestion_service import IngestionService
 from .bot_knowledge_service import BotKnowledgeService
 from .utils import get_collection_name, resolve_strategy, calculate_fetch_k
 
-# #region agent log
-import json as _dbg_json
-import traceback as _dbg_traceback
-def _dbg_log(location, message, data=None, hypothesis_id=None):
-    try:
-        log_entry = {"location": location, "message": message, "data": data or {}, "timestamp": __import__('time').time(), "hypothesisId": hypothesis_id, "sessionId": "debug-session"}
-        with open("/Users/youmyeongkim/projects/deep-bot/.cursor/debug.log", "a") as f:
-            f.write(_dbg_json.dumps(log_entry) + "\n")
-    except: pass
-# #endregion
-
 if TYPE_CHECKING:
     from config import Config
 
 
 class ChunkedMemoryService:
-    # #region agent log
-    _instance_count = 0  # Track how many instances are created
-    # #endregion
     """
     Facade for chunked memory operations.
     
@@ -72,18 +58,6 @@ class ChunkedMemoryService:
             config: Configuration instance (defaults to Config class)
             default_strategy: Default chunking strategy
         """
-        # #region agent log
-        import psutil
-        ChunkedMemoryService._instance_count += 1
-        instance_num = ChunkedMemoryService._instance_count
-        process = psutil.Process()
-        # Get caller info
-        stack = _dbg_traceback.extract_stack()
-        caller = stack[-3] if len(stack) >= 3 else None  # -1 is this, -2 is __init__, -3 is caller
-        caller_info = f"{caller.filename}:{caller.lineno}" if caller else "unknown"
-        _dbg_log("chunked_memory/__init__.py:init:start", f"Creating ChunkedMemoryService instance #{instance_num}", {"rss_mb_before": process.memory_info().rss / 1024 / 1024, "instance_num": instance_num, "caller": caller_info, "embedder_provided": embedder is not None}, "A")
-        # #endregion
-        
         from storage.vectors.factory import VectorStoreFactory
         from embedding.factory import EmbeddingFactory
         from config import Config as ConfigClass
@@ -182,10 +156,6 @@ class ChunkedMemoryService:
             # No event loop yet, will initialize lazily on first search
             # This ensures bot knowledge is available even if startup initialization fails
             pass
-        
-        # #region agent log
-        _dbg_log("chunked_memory/__init__.py:init:complete", f"ChunkedMemoryService instance #{instance_num} initialized", {"rss_mb_after": process.memory_info().rss / 1024 / 1024, "instance_num": instance_num, "total_instances": ChunkedMemoryService._instance_count}, "A")
-        # #endregion
 
     def set_active_strategy(self, strategy: ChunkStrategy) -> None:
         """Set the active chunking strategy."""

@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 # Module-level singleton
 _shared_instance: Optional['ChunkedMemoryService'] = None
 _initialization_in_progress = False
-_access_count = 0  # Track how many times the singleton is accessed
 
 
 def get_shared_chunked_memory_service() -> 'ChunkedMemoryService':
@@ -31,17 +30,9 @@ def get_shared_chunked_memory_service() -> 'ChunkedMemoryService':
     Returns:
         Shared ChunkedMemoryService instance
     """
-    global _shared_instance, _initialization_in_progress, _access_count
-    
-    _access_count += 1
+    global _shared_instance, _initialization_in_progress
     
     if _shared_instance is not None:
-        # #region agent log - stdout for Railway
-        import psutil
-        process = psutil.Process()
-        rss_mb = process.memory_info().rss / 1024 / 1024
-        logger.info(f"[MEMORY DEBUG] Reusing shared ChunkedMemoryService (access #{_access_count}, RSS: {rss_mb:.1f}MB)")
-        # #endregion
         return _shared_instance
     
     # Prevent recursive initialization
@@ -51,18 +42,12 @@ def get_shared_chunked_memory_service() -> 'ChunkedMemoryService':
     _initialization_in_progress = True
     
     try:
-        import psutil
-        process = psutil.Process()
-        rss_before = process.memory_info().rss / 1024 / 1024
-        
         from storage.chunked_memory import ChunkedMemoryService
         from config import Config
         
-        logger.info(f"[MEMORY DEBUG] Creating shared ChunkedMemoryService singleton (RSS before: {rss_before:.1f}MB)")
+        logger.info("Creating shared ChunkedMemoryService singleton")
         _shared_instance = ChunkedMemoryService(config=Config)
-        
-        rss_after = process.memory_info().rss / 1024 / 1024
-        logger.info(f"[MEMORY DEBUG] Shared ChunkedMemoryService created (RSS after: {rss_after:.1f}MB, delta: +{rss_after - rss_before:.1f}MB)")
+        logger.info("Shared ChunkedMemoryService created successfully")
         
         return _shared_instance
     finally:
@@ -73,8 +58,7 @@ def clear_shared_instance():
     """
     Clear the shared instance (useful for testing or cleanup).
     """
-    global _shared_instance, _access_count
+    global _shared_instance
     _shared_instance = None
-    _access_count = 0
-    logger.info("[MEMORY DEBUG] Shared ChunkedMemoryService instance cleared")
+    logger.info("Shared ChunkedMemoryService instance cleared")
 

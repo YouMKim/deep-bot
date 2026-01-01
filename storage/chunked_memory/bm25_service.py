@@ -13,17 +13,6 @@ from chunking.constants import ChunkStrategy
 from .author_filter import AuthorFilter
 from .utils import get_collection_name, resolve_strategy
 
-# #region agent log
-import json as _dbg_json
-import sys
-def _dbg_log(location, message, data=None, hypothesis_id=None):
-    try:
-        log_entry = {"location": location, "message": message, "data": data or {}, "timestamp": __import__('time').time(), "hypothesisId": hypothesis_id, "sessionId": "debug-session"}
-        with open("/Users/youmyeongkim/projects/deep-bot/.cursor/debug.log", "a") as f:
-            f.write(_dbg_json.dumps(log_entry) + "\n")
-    except: pass
-# #endregion
-
 if TYPE_CHECKING:
     from config import Config
 
@@ -129,13 +118,6 @@ class BM25Service:
             }
             self._bm25_cache.move_to_end(collection_name)
             self.logger.info(f"Cached BM25 index for {collection_name} (cache size: {len(self._bm25_cache)}/{self._max_cache_size})")
-            
-            # #region agent log
-            # Estimate cache memory size
-            docs_size = sum(sys.getsizeof(d.get('document', '')) for d in all_docs) / 1024 / 1024
-            corpus_size = sum(sys.getsizeof(t) for t in tokenized_corpus) / 1024 / 1024
-            _dbg_log("bm25_service.py:search:cache_built", f"BM25 cache built for {collection_name}", {"collection": collection_name, "doc_count": len(all_docs), "docs_size_mb": docs_size, "corpus_size_mb": corpus_size, "cache_entries": len(self._bm25_cache)}, "C")
-            # #endregion
 
         # Tokenize query
         tokenized_query = self.tokenize(query)
