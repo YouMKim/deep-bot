@@ -421,7 +421,7 @@ class ResolutionStorage(SQLiteStorage):
                            is_active, is_completed, created_at, completed_at
                     FROM resolutions
                     WHERE user_id = ?
-                    ORDER BY created_at DESC
+                    ORDER BY created_at ASC
                 """, (user_id,))
             else:
                 cursor.execute("""
@@ -431,7 +431,7 @@ class ResolutionStorage(SQLiteStorage):
                            is_active, is_completed, created_at, completed_at
                     FROM resolutions
                     WHERE user_id = ? AND is_active = 1 AND is_completed = 0
-                    ORDER BY created_at DESC
+                    ORDER BY created_at ASC
                 """, (user_id,))
             
             rows = cursor.fetchall()
