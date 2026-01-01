@@ -10,6 +10,7 @@ import calendar
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Optional
 from enum import Enum
+from contextlib import contextmanager
 
 from storage.sqlite_storage import SQLiteStorage
 
@@ -141,6 +142,21 @@ class ResolutionStorage(SQLiteStorage):
         super().__init__(db_path)
         self.logger = logging.getLogger(__name__)
         self._init_database()
+    
+    @contextmanager
+    def _get_connection(self):
+        """
+        Get a SQLite database connection with foreign keys enabled.
+        
+        Overrides base class to enable CASCADE deletes.
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            # Enable foreign keys for CASCADE deletes to work
+            conn.execute("PRAGMA foreign_keys = ON")
+            yield conn
+        finally:
+            conn.close()
     
     def _init_database(self):
         """Initialize database tables."""
