@@ -789,29 +789,37 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
             logger.error(f"Error adding checkpoint: {e}", exc_info=True)
             await ctx.send("❌ Failed to add checkpoint. Please try again.")
     
-    @checkpoint.command(name="add_weekly", aliases=["addweekly"], help="Add 52 weekly checkpoints for a daily task")
-    async def checkpoint_add_weekly(self, ctx, resolution_id: int, *, task_name: str):
+    @checkpoint.command(name="add_weekly", aliases=["addweekly"], help="Add 52 weekly checkpoints for daily tasks")
+    async def checkpoint_add_weekly(self, ctx, resolution_id: int, *, tasks: str):
         """
-        Add 52 weekly checkpoints for a daily task.
+        Add 52 weekly checkpoints for one or more daily tasks.
         
-        Usage: !checkpoint add_weekly <resolution_id> <task_name>
+        Usage: 
+        Single: !checkpoint add_weekly <resolution_id> <task_name>
+        Multiple: !checkpoint add_weekly <resolution_id> <task1> | <task2> | <task3>
         
-        This creates 52 checkpoints (Week 1, Week 2, ... Week 52) for tracking
+        This creates 52 checkpoints per task (Week 1-52) for tracking
         daily habits on a weekly basis.
         
-        Example: !checkpoint add_weekly 1 "Daily leetcode"
-        Creates: Week 1: Daily leetcode, Week 2: Daily leetcode, ... Week 52: Daily leetcode
+        Examples: 
+        !checkpoint add_weekly 1 "Daily leetcode"
+        !checkpoint add_weekly 2 "Run 3x per week" | "Daily pullup" | "Daily pushup"
         """
         user_id = str(ctx.author.id)
-        task_name = task_name.strip().strip('"\'')
+        tasks = tasks.strip().strip('"\'')
         
-        if len(task_name) < 2:
-            await ctx.send("❌ Task name is too short.")
-            return
+        # Check if multiple tasks (separated by |)
+        task_names = [t.strip().strip('"\'') for t in tasks.split('|')]
         
-        if len(task_name) > 150:
-            await ctx.send("❌ Task name is too long (max 150 characters).")
-            return
+        # Validate all tasks
+        for task_name in task_names:
+            if len(task_name) < 2:
+                await ctx.send(f"❌ Task name is too short: \"{task_name}\"")
+                return
+            
+            if len(task_name) > 150:
+                await ctx.send(f"❌ Task name is too long (max 150 characters): \"{task_name[:50]}...\"")
+                return
         
         try:
             # Verify resolution belongs to user
@@ -829,44 +837,70 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
             if len(existing_checkpoints) > 0:
                 status_msg = await ctx.send(
                     f"⚠️ Note: This resolution already has {len(existing_checkpoints)} checkpoint(s).\n"
-                    f"⏳ Creating 52 weekly checkpoints for '{task_name}'..."
+                    f"⏳ Creating {len(task_names) * 52} weekly checkpoints ({len(task_names)} task(s) × 52 weeks)..."
                 )
             else:
-                status_msg = await ctx.send(f"⏳ Creating 52 weekly checkpoints for '{task_name}'...")
+                status_msg = await ctx.send(
+                    f"⏳ Creating {len(task_names) * 52} weekly checkpoints ({len(task_names)} task(s) × 52 weeks)..."
+                )
             
-            # Create 52 weekly checkpoints
-            added_count = 0
-            for week_num in range(1, 53):
-                checkpoint_text = f"Week {week_num}: {task_name}"
-                try:
-                    self.resolution_storage.add_checkpoint(
-                        resolution_id=resolution_id,
-                        text=checkpoint_text
-                    )
-                    added_count += 1
-                except Exception as e:
-                    logger.error(f"Error adding checkpoint Week {week_num}: {e}")
-                    # Continue with other weeks
+            # Create 52 weekly checkpoints for each task
+            total_added = 0
+            task_results = []
+            
+            for task_name in task_names:
+                task_added = 0
+                for week_num in range(1, 53):
+                    checkpoint_text = f"Week {week_num}: {task_name}"
+                    try:
+                        self.resolution_storage.add_checkpoint(
+                            resolution_id=resolution_id,
+                            text=checkpoint_text
+                        )
+                        task_added += 1
+                        total_added += 1
+                    except Exception as e:
+                        logger.error(f"Error adding checkpoint Week {week_num} for '{task_name}': {e}")
+                        # Continue with other weeks
+                
+                task_results.append({
+                    'name': task_name,
+                    'count': task_added
+                })
             
             # Get updated progress
             resolution = self.resolution_storage.get_resolution(resolution_id)
             progress = resolution['checkpoint_progress']
             
             embed = discord.Embed(
-                title=f"✅ 52 Weekly Checkpoints Created!",
+                title=f"✅ {len(task_names)} Weekly Task Set(s) Created!",
                 description=f"Added to **{resolution['text']}**",
                 color=discord.Color.green()
             )
             
-            embed.add_field(
-                name="Task",
-                value=task_name,
-                inline=False
-            )
+            # Show task summary
+            if len(task_results) == 1:
+                embed.add_field(
+                    name="Task",
+                    value=task_results[0]['name'],
+                    inline=False
+                )
+            else:
+                task_list = "\n".join([f"• {tr['name']} ({tr['count']} checkpoints)" for tr in task_results])
+                if len(task_list) > 1024:
+                    task_list = "\n".join([f"• {tr['name'][:60]}..." if len(tr['name']) > 60 else f"• {tr['name']}" for tr in task_results[:10]])
+                    if len(task_results) > 10:
+                        task_list += f"\n... and {len(task_results) - 10} more"
+                
+                embed.add_field(
+                    name="Tasks Created",
+                    value=task_list,
+                    inline=False
+                )
             
             embed.add_field(
-                name="Checkpoints Created",
-                value=f"{added_count} weekly checkpoints (Week 1 - Week 52)",
+                name="Total Checkpoints Created",
+                value=f"{total_added} weekly checkpoints (52 per task × {len(task_names)} tasks)",
                 inline=True
             )
             
