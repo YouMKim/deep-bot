@@ -170,10 +170,14 @@ class Resolutions(commands.Cog):
                 user_display_name=user_display_name
             )
             
-            # Get the created resolution to show check-in day
-            resolution = self.resolution_storage.get_resolution(resolution_id)
+            # Get the created resolution to show check-in day and per-user ID
+            resolution = self.resolution_storage.get_resolution(resolution_id, user_id=user_id)
             check_day_display = resolution.get('check_day_display', 'N/A')
             next_check = resolution.get('next_check_date', '')[:10]  # Get just date part
+            
+            # Get user display ID (should be the last one in their list)
+            user_resolutions = self.resolution_storage.get_user_resolutions(user_id)
+            display_id = len(user_resolutions)  # Since it's the newest, it's the last one
             
             embed = discord.Embed(
                 title="🎯 Resolution Created!",
@@ -199,12 +203,12 @@ class Resolutions(commands.Cog):
             )
             embed.add_field(
                 name="Resolution ID",
-                value=f"#{resolution_id}",
+                value=f"#{display_id}",
                 inline=True
             )
             embed.add_field(
                 name="Next Step",
-                value=f"Add checkpoints with:\n`!checkpoint add {resolution_id} \"Your sub-task\"`",
+                value=f"Add checkpoints with:\n`!checkpoint add {display_id} \"Your sub-task\"`",
                 inline=False
             )
             embed.set_footer(text="Break your goal into smaller, achievable steps!")
@@ -243,6 +247,29 @@ class Resolutions(commands.Cog):
             logger.error(f"Error listing resolutions: {e}", exc_info=True)
             await ctx.send("❌ Failed to load resolutions. Please try again.")
     
+    def _resolve_resolution_id(self, user_id: str, target_id: int) -> Optional[int]:
+        """
+        Resolve a resolution ID - tries per-user display ID first, then global ID.
+        
+        Args:
+            user_id: User's Discord ID
+            target_id: ID from command (could be per-user or global)
+        
+        Returns:
+            Global resolution ID or None if not found
+        """
+        # First try per-user display ID
+        resolution = self.resolution_storage.get_resolution_by_user_display_id(user_id, target_id)
+        if resolution:
+            return resolution['id']
+        
+        # Fall back to global ID
+        resolution = self.resolution_storage.get_resolution(target_id, user_id=user_id)
+        if resolution and resolution['user_id'] == user_id:
+            return resolution['id']
+        
+        return None
+    
     @resolution.command(name="check", help="Record a check-in for a resolution")
     async def resolution_check(self, ctx, resolution_id: int, status: str, *, notes: Optional[str] = None):
         """
@@ -250,6 +277,8 @@ class Resolutions(commands.Cog):
         
         Usage: !resolution check <id> <status> [notes]
         Statuses: on_track, struggling
+        
+        The ID can be your per-user ID (1, 2, 3...) or the global ID.
         
         Example: !resolution check 1 on_track "Made good progress this week!"
         """
@@ -270,8 +299,14 @@ class Resolutions(commands.Cog):
         user_id = str(ctx.author.id)
         
         try:
-            # Verify resolution belongs to user
-            resolution = self.resolution_storage.get_resolution(resolution_id)
+            # Resolve ID (per-user or global)
+            global_id = self._resolve_resolution_id(user_id, resolution_id)
+            if not global_id:
+                await ctx.send("❌ Resolution not found.")
+                return
+            
+            # Get resolution to verify ownership
+            resolution = self.resolution_storage.get_resolution(global_id, user_id=user_id)
             if not resolution:
                 await ctx.send("❌ Resolution not found.")
                 return
@@ -282,7 +317,7 @@ class Resolutions(commands.Cog):
             
             # Record check-in
             result = self.resolution_storage.record_check_in(
-                resolution_id=resolution_id,
+                resolution_id=global_id,
                 status=status_lower,
                 notes=notes.strip('"\'') if notes else None
             )
@@ -344,12 +379,19 @@ class Resolutions(commands.Cog):
         Edit a resolution's text.
         
         Usage: !resolution edit <id> <new_text>
+        The ID can be your per-user ID (1, 2, 3...) or the global ID.
         """
         user_id = str(ctx.author.id)
         new_text = new_text.strip('"\'')
         
         try:
-            resolution = self.resolution_storage.get_resolution(resolution_id)
+            # Resolve ID (per-user or global)
+            global_id = self._resolve_resolution_id(user_id, resolution_id)
+            if not global_id:
+                await ctx.send("❌ Resolution not found.")
+                return
+            
+            resolution = self.resolution_storage.get_resolution(global_id, user_id=user_id)
             if not resolution:
                 await ctx.send("❌ Resolution not found.")
                 return
@@ -359,7 +401,7 @@ class Resolutions(commands.Cog):
                 return
             
             success = self.resolution_storage.update_resolution(
-                resolution_id=resolution_id,
+                resolution_id=global_id,
                 text=new_text
             )
             
@@ -411,12 +453,18 @@ class Resolutions(commands.Cog):
             
             # Handle single resolution deletion
             try:
-                resolution_id = int(target)
+                target_id = int(target)
             except ValueError:
                 await ctx.send("❌ Invalid format. Use `!resolution delete <id>` or `!resolution delete all`")
                 return
             
-            resolution = self.resolution_storage.get_resolution(resolution_id)
+            # Resolve ID (per-user or global)
+            global_id = self._resolve_resolution_id(user_id, target_id)
+            if not global_id:
+                await ctx.send("❌ Resolution not found.")
+                return
+            
+            resolution = self.resolution_storage.get_resolution(global_id, user_id=user_id)
             if not resolution:
                 await ctx.send("❌ Resolution not found.")
                 return
@@ -427,7 +475,7 @@ class Resolutions(commands.Cog):
             
             # Send confirmation with buttons
             view = ConfirmDeleteView(
-                resolution_id=resolution_id,
+                resolution_id=global_id,
                 resolution_storage=self.resolution_storage
             )
             
@@ -701,6 +749,8 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
         Single: !checkpoint add <resolution_id> <text>
         Multiple: !checkpoint add <resolution_id> <text1> | <text2> | <text3>
         
+        The resolution_id can be your per-user ID (1, 2, 3...) or the global ID.
+        
         Examples:
         !checkpoint add 1 "Join a gym"
         !checkpoint add 1 "Daily leetcode" | "Daily system design" | "March - application begins"
@@ -722,8 +772,14 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                 return
         
         try:
+            # Resolve ID (per-user or global)
+            global_id = self._resolve_resolution_id(user_id, resolution_id)
+            if not global_id:
+                await ctx.send("❌ Resolution not found.")
+                return
+            
             # Verify resolution belongs to user
-            resolution = self.resolution_storage.get_resolution(resolution_id)
+            resolution = self.resolution_storage.get_resolution(global_id, user_id=user_id)
             if not resolution:
                 await ctx.send("❌ Resolution not found.")
                 return
@@ -736,7 +792,7 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
             added_checkpoints = []
             for cp_text in checkpoint_texts:
                 checkpoint_id = self.resolution_storage.add_checkpoint(
-                    resolution_id=resolution_id,
+                    resolution_id=global_id,
                     text=cp_text
                 )
                 added_checkpoints.append({
@@ -745,7 +801,7 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                 })
             
             # Get updated progress
-            resolution = self.resolution_storage.get_resolution(resolution_id)
+            resolution = self.resolution_storage.get_resolution(global_id, user_id=user_id)
             progress = resolution['checkpoint_progress']
             
             # Build response embed
@@ -798,6 +854,7 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
         Single: !checkpoint add_weekly <resolution_id> <task_name>
         Multiple: !checkpoint add_weekly <resolution_id> <task1> | <task2> | <task3>
         
+        The resolution_id can be your per-user ID (1, 2, 3...) or the global ID.
         This creates 52 checkpoints per task (Week 1-52) for tracking
         daily habits on a weekly basis.
         
@@ -822,8 +879,14 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                 return
         
         try:
+            # Resolve ID (per-user or global)
+            global_id = self._resolve_resolution_id(user_id, resolution_id)
+            if not global_id:
+                await ctx.send("❌ Resolution not found.")
+                return
+            
             # Verify resolution belongs to user
-            resolution = self.resolution_storage.get_resolution(resolution_id)
+            resolution = self.resolution_storage.get_resolution(global_id, user_id=user_id)
             if not resolution:
                 await ctx.send("❌ Resolution not found.")
                 return
@@ -854,7 +917,7 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                     checkpoint_text = f"Week {week_num}: {task_name}"
                     try:
                         self.resolution_storage.add_checkpoint(
-                            resolution_id=resolution_id,
+                            resolution_id=global_id,
                             text=checkpoint_text
                         )
                         task_added += 1
@@ -869,7 +932,7 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                 })
             
             # Get updated progress
-            resolution = self.resolution_storage.get_resolution(resolution_id)
+            resolution = self.resolution_storage.get_resolution(global_id, user_id=user_id)
             progress = resolution['checkpoint_progress']
             
             embed = discord.Embed(
@@ -910,11 +973,19 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
                 inline=True
             )
             
+            # Get user display ID for the resolution
+            user_resolutions = self.resolution_storage.get_user_resolutions(user_id, include_completed=True)
+            display_id = None
+            for idx, res in enumerate(user_resolutions, 1):
+                if res['id'] == global_id:
+                    display_id = idx
+                    break
+            
             embed.add_field(
                 name="💡 How to Use",
                 value=(
                     f"Complete each week's checkpoint when you've done the daily task that week.\n"
-                    f"Use `!checkpoint list {resolution_id}` to see all weekly checkpoints.\n"
+                    f"Use `!checkpoint list {display_id or global_id}` to see all weekly checkpoints.\n"
                     f"Or use `!checkpoint` for the interactive dropdown."
                 ),
                 inline=False
@@ -1014,7 +1085,7 @@ Keep the tone friendly and supportive, like a helpful accountability partner."""
             progress = resolution['checkpoint_progress']
             
             embed = discord.Embed(
-                title=f"📋 Checkpoints for Resolution #{resolution_id}",
+                title=f"📋 Checkpoints for Resolution #{display_id or global_id}",
                 description=f"**{resolution['text']}**",
                 color=discord.Color.blue()
             )

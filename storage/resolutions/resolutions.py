@@ -311,8 +311,12 @@ class ResolutionStorage(SQLiteStorage):
             self.logger.info(f"Created resolution {resolution_id} for user {user_id}")
             return resolution_id
     
-    def get_resolution(self, resolution_id: int) -> Optional[Dict]:
-        """Get a resolution by ID with checkpoint progress."""
+    def get_resolution(self, resolution_id: int, user_id: Optional[str] = None) -> Optional[Dict]:
+        """
+        Get a resolution by ID with checkpoint progress.
+        
+        If user_id is provided, also includes user_display_id.
+        """
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -350,12 +354,39 @@ class ResolutionStorage(SQLiteStorage):
                 'completed_at': row[13]
             }
             
+            # Add user_display_id if user_id provided
+            if user_id and row[1] == user_id:
+                user_resolutions = self.get_user_resolutions(user_id, include_completed=True)
+                for idx, res in enumerate(user_resolutions, 1):
+                    if res['id'] == resolution_id:
+                        resolution['user_display_id'] = idx
+                        break
+            
             # Get checkpoint progress
             checkpoints = self.get_checkpoints(resolution_id)
             resolution['checkpoints'] = checkpoints
             resolution['checkpoint_progress'] = self._calculate_checkpoint_progress(checkpoints)
             
             return resolution
+    
+    def get_resolution_by_user_display_id(self, user_id: str, user_display_id: int) -> Optional[Dict]:
+        """
+        Get a resolution by user's display ID (1, 2, 3...).
+        
+        Args:
+            user_id: User's Discord ID
+            user_display_id: Per-user display ID (1, 2, 3...)
+        
+        Returns:
+            Resolution dict or None if not found
+        """
+        resolutions = self.get_user_resolutions(user_id, include_completed=True)
+        
+        # user_display_id is 1-indexed, list is 0-indexed
+        if 1 <= user_display_id <= len(resolutions):
+            return resolutions[user_display_id - 1]
+        
+        return None
     
     def get_user_resolutions(
         self,
@@ -390,13 +421,15 @@ class ResolutionStorage(SQLiteStorage):
             rows = cursor.fetchall()
             resolutions = []
             
-            for row in rows:
+            # Add per-user display ID (1, 2, 3... for each user)
+            for idx, row in enumerate(rows, 1):
                 frequency = row[4]
                 check_day_of_week = row[6]
                 check_day_of_month = row[7]
                 
                 resolution = {
-                    'id': row[0],
+                    'id': row[0],  # Global ID (for database operations)
+                    'user_display_id': idx,  # Per-user display ID (1, 2, 3...)
                     'user_id': row[1],
                     'user_display_name': row[2],
                     'text': row[3],
@@ -503,6 +536,8 @@ class ResolutionStorage(SQLiteStorage):
         """
         Delete all resolutions for a user.
         
+        If the database becomes empty after deletion, resets the AUTOINCREMENT counter.
+        
         Returns:
             Number of resolutions deleted
         """
@@ -510,8 +545,25 @@ class ResolutionStorage(SQLiteStorage):
             cursor = conn.cursor()
             # Cascading deletes handle checkpoints and check-ins
             cursor.execute("DELETE FROM resolutions WHERE user_id = ?", (user_id,))
+            deleted_count = cursor.rowcount
+            
+            # Check if database is now empty
+            cursor.execute("SELECT COUNT(*) FROM resolutions")
+            remaining_count = cursor.fetchone()[0]
+            
+            # If database is now empty, reset the AUTOINCREMENT sequence
+            if remaining_count == 0:
+                try:
+                    # Reset SQLite sequence counter for resolutions table
+                    cursor.execute("DELETE FROM sqlite_sequence WHERE name='resolutions'")
+                    self.logger.info("Reset AUTOINCREMENT counter for resolutions table (database is empty)")
+                except sqlite3.OperationalError:
+                    # Table might not exist in sqlite_sequence if no rows were ever inserted
+                    # This is fine - counter will start at 1 anyway
+                    pass
+            
             conn.commit()
-            return cursor.rowcount
+            return deleted_count
     
     def mark_resolution_completed(self, resolution_id: int) -> bool:
         """Mark a resolution as completed."""

@@ -616,16 +616,19 @@ def build_check_in_embed(
             color=discord.Color.blue()
         )
         
-        for i, res in enumerate(resolutions[:5], 1):  # Limit to 5
+        for res in resolutions[:5]:  # Limit to 5
             progress = res['checkpoint_progress']
             streak_text = f" 🔥{res['current_streak']}" if res['current_streak'] > 0 else ""
+            
+            # Use per-user display ID if available
+            display_id = res.get('user_display_id', res['id'])
             
             field_value = f"Progress: {progress['completed']}/{progress['total']} checkpoints"
             if res['current_streak'] > 0:
                 field_value += f"\nStreak: {res['current_streak']} {res['frequency']}s"
             
             embed.add_field(
-                name=f"#{i} {res['text'][:50]}{'...' if len(res['text']) > 50 else ''}{streak_text}",
+                name=f"#{display_id} {res['text'][:50]}{'...' if len(res['text']) > 50 else ''}{streak_text}",
                 value=field_value,
                 inline=False
             )
@@ -658,6 +661,9 @@ def build_resolution_list_embed(
         progress = res['checkpoint_progress']
         streak_text = f" 🔥{res['current_streak']}" if res['current_streak'] > 0 else ""
         
+        # Use per-user display ID if available, otherwise fall back to global ID
+        display_id = res.get('user_display_id', res['id'])
+        
         # Build field value
         lines = []
         
@@ -689,7 +695,7 @@ def build_resolution_list_embed(
             lines.append(f"⬜ Next: {incomplete[0]['text'][:40]}...")
         
         embed.add_field(
-            name=f"#{res['id']} {res['text'][:60]}{'...' if len(res['text']) > 60 else ''}{streak_text}",
+            name=f"#{display_id} {res['text'][:60]}{'...' if len(res['text']) > 60 else ''}{streak_text}",
             value="\n".join(lines),
             inline=False
         )
