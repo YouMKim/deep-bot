@@ -247,15 +247,14 @@ class CheckpointSelect(Select):
         options = []
         
         if action == "complete":
-            # Show incomplete checkpoints
+            # Show incomplete checkpoints (all checkpoints passed are already incomplete)
             for cp in checkpoints:
-                if not cp['is_completed']:
-                    options.append(discord.SelectOption(
-                        label=cp['text'][:100],  # Discord limit
-                        value=str(cp['id']),
-                        description=f"Resolution: {cp.get('resolution_text', '')[:50]}",
-                        emoji="⬜"
-                    ))
+                options.append(discord.SelectOption(
+                    label=cp['text'][:100],  # Discord limit
+                    value=str(cp['id']),
+                    description=f"Resolution: {cp.get('resolution_text', '')[:50]}",
+                    emoji="⬜"
+                ))
             
             if not options:
                 options.append(discord.SelectOption(
