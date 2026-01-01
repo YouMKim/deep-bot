@@ -691,14 +691,33 @@ def build_resolution_list_embed(
         if res['current_streak'] > 0:
             lines.append(f"🔥 Streak: {res['current_streak']} (Best: {res['longest_streak']})")
         
-        # Checkpoints preview
-        incomplete = [cp for cp in res['checkpoints'] if not cp['is_completed']]
-        if incomplete:
-            lines.append(f"⬜ Next: {incomplete[0]['text'][:40]}...")
+        # List all checkpoints as bullet points
+        if res['checkpoints']:
+            lines.append("")  # Empty line separator
+            checkpoint_lines = []
+            
+            # Build checkpoint list, checking length as we go
+            base_content = "\n".join(lines)
+            for cp in res['checkpoints']:
+                emoji = "✅" if cp['is_completed'] else "⬜"
+                checkpoint_line = f"{emoji} {cp['text']}"
+                
+                # Test if adding this line would exceed 1024 char limit
+                test_content = base_content + "\n" + "\n".join(checkpoint_lines + [checkpoint_line])
+                if len(test_content) > 1024:
+                    # Add truncation indicator and stop
+                    remaining_count = len(res['checkpoints']) - len(checkpoint_lines)
+                    if remaining_count > 0:
+                        checkpoint_lines.append(f"*... and {remaining_count} more checkpoint(s)*")
+                    break
+                
+                checkpoint_lines.append(checkpoint_line)
+            
+            lines.extend(checkpoint_lines)
         
         embed.add_field(
             name=f"#{display_id} {res['text'][:60]}{'...' if len(res['text']) > 60 else ''}{streak_text}",
-            value="\n".join(lines),
+            value=field_value,
             inline=False
         )
     
