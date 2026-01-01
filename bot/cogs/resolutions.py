@@ -20,7 +20,7 @@ from bot.cogs.resolution_views import (
     CheckpointView,
     AddCheckpointView,
     ConfirmDeleteView,
-    build_resolution_list_embed,
+    build_resolution_list_embeds,
     build_completion_embed,
     build_check_in_embed
 )
@@ -236,12 +236,14 @@ class Resolutions(commands.Cog):
                 include_completed=include_completed
             )
             
-            embed = build_resolution_list_embed(
+            embeds = build_resolution_list_embeds(
                 resolutions=resolutions,
                 user_display_name=ctx.author.display_name
             )
             
-            await ctx.send(embed=embed)
+            # Send all embeds (Discord allows up to 10 embeds per message)
+            for embed in embeds:
+                await ctx.send(embed=embed)
             
         except Exception as e:
             logger.error(f"Error listing resolutions: {e}", exc_info=True)

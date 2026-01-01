@@ -638,11 +638,16 @@ def build_check_in_embed(
     return embed
 
 
-def build_resolution_list_embed(
+def build_resolution_list_embeds(
     resolutions: List[Dict],
     user_display_name: str
-) -> discord.Embed:
-    """Build an embed showing all user resolutions."""
+) -> List[discord.Embed]:
+    """
+    Build a list of embeds, one per resolution.
+    
+    Returns:
+        List of embeds (one per resolution), or single embed with empty message if no resolutions
+    """
     if not resolutions:
         embed = discord.Embed(
             title="📋 Your Resolutions",
@@ -650,12 +655,9 @@ def build_resolution_list_embed(
                        "Create one with `!resolution set <frequency> <text>`",
             color=discord.Color.blue()
         )
-        return embed
+        return [embed]
     
-    embed = discord.Embed(
-        title=f"📋 {user_display_name}'s Resolutions",
-        color=discord.Color.blue()
-    )
+    embeds = []
     
     for res in resolutions:
         progress = res['checkpoint_progress']
@@ -664,15 +666,15 @@ def build_resolution_list_embed(
         # Use per-user display ID if available, otherwise fall back to global ID
         display_id = res.get('user_display_id', res['id'])
         
-        # Build field value
-        lines = []
+        # Build embed description
+        description_lines = []
         
         # Progress bar or "no checkpoints" message
         if progress['total'] > 0:
             progress_bar = _build_progress_bar(progress['percentage'])
-            lines.append(f"{progress_bar} {progress['completed']}/{progress['total']} ({progress['percentage']}%)")
+            description_lines.append(f"{progress_bar} {progress['completed']}/{progress['total']} ({progress['percentage']}%)")
         else:
-            lines.append("📝 No checkpoints added yet")
+            description_lines.append("📝 No checkpoints added yet")
         
         # Frequency with check-in day and next check date
         next_date = res['next_check_date'][:10] if res['next_check_date'] else "N/A"
@@ -681,75 +683,44 @@ def build_resolution_list_embed(
         
         if check_day:
             if res['frequency'] in ['weekly', 'biweekly']:
-                lines.append(f"📅 {freq} ({check_day}s) • Next: {next_date}")
+                description_lines.append(f"📅 {freq} ({check_day}s) • Next: {next_date}")
             else:
-                lines.append(f"📅 {freq} ({check_day}) • Next: {next_date}")
+                description_lines.append(f"📅 {freq} ({check_day}) • Next: {next_date}")
         else:
-            lines.append(f"📅 {freq} • Next: {next_date}")
+            description_lines.append(f"📅 {freq} • Next: {next_date}")
         
         # Streak
         if res['current_streak'] > 0:
-            lines.append(f"🔥 Streak: {res['current_streak']} (Best: {res['longest_streak']})")
+            description_lines.append(f"🔥 Streak: {res['current_streak']} (Best: {res['longest_streak']})")
         
-        # List all checkpoints as bullet points
+        # List all checkpoints as bullet points (no length limit since we use description, not field)
         if res['checkpoints']:
-            # Build base content first (without checkpoints)
-            base_content = "\n".join(lines)
-            base_length = len(base_content)
-            separator_length = 1  # "\n" separator between base and checkpoints
-            
-            checkpoint_lines = []
-            
+            description_lines.append("")  # Empty line separator
             for cp in res['checkpoints']:
                 emoji = "✅" if cp['is_completed'] else "⬜"
-                checkpoint_line = f"{emoji} {cp['text']}"
-                
-                # Calculate total length if we add this checkpoint
-                # Format: base_content + "\n" + "\n".join(checkpoint_lines + new_line)
-                test_checkpoints = checkpoint_lines + [checkpoint_line]
-                checkpoints_text = "\n".join(test_checkpoints)
-                total_length = base_length + separator_length + len(checkpoints_text)
-                
-                if total_length > 1024:
-                    # Try adding truncation message instead
-                    remaining_count = len(res['checkpoints']) - len(checkpoint_lines)
-                    if remaining_count > 0 and checkpoint_lines:
-                        truncation_text = f"*... and {remaining_count} more checkpoint(s)*"
-                        checkpoints_with_truncation = "\n".join(checkpoint_lines) + "\n" + truncation_text
-                        truncation_length = base_length + separator_length + len(checkpoints_with_truncation)
-                        
-                        # Only add truncation if it fits
-                        if truncation_length <= 1024:
-                            checkpoint_lines.append(truncation_text)
-                    break
-                
-                checkpoint_lines.append(checkpoint_line)
-            
-            # Add checkpoints to lines
-            if checkpoint_lines:
-                lines.append("")  # Empty line separator
-                lines.extend(checkpoint_lines)
+                description_lines.append(f"{emoji} {cp['text']}")
         
-        # Build field value from all lines and ensure it's within limit
-        field_value = "\n".join(lines)
-        if len(field_value) > 1024:
-            # Final safety check: truncate at last complete line
-            truncated = field_value[:1020]
+        # Build description (max 4096 characters for embed description)
+        description = "\n".join(description_lines)
+        if len(description) > 4096:
+            # Truncate at last complete line
+            truncated = description[:4090]
             last_newline = truncated.rfind('\n')
             if last_newline > 0:
-                field_value = truncated[:last_newline] + "\n..."
+                description = truncated[:last_newline] + "\n*... (truncated)*"
             else:
-                field_value = truncated + "..."
+                description = truncated + "*... (truncated)*"
         
-        embed.add_field(
-            name=f"#{display_id} {res['text'][:60]}{'...' if len(res['text']) > 60 else ''}{streak_text}",
-            value=field_value,
-            inline=False
+        embed = discord.Embed(
+            title=f"#{display_id} {res['text']}{streak_text}",
+            description=description,
+            color=discord.Color.blue()
         )
+        
+        embed.set_footer(text="Use !checkpoint to complete sub-tasks • !resolution summary for AI analysis")
+        embeds.append(embed)
     
-    embed.set_footer(text="Use !checkpoint to complete sub-tasks • !resolution summary for AI analysis")
-    
-    return embed
+    return embeds
 
 
 def build_completion_embed(resolution: Dict) -> discord.Embed:
