@@ -667,10 +667,12 @@ def build_resolution_list_embed(
         # Build field value
         lines = []
         
-        # Progress bar
+        # Progress bar or "no checkpoints" message
         if progress['total'] > 0:
             progress_bar = _build_progress_bar(progress['percentage'])
             lines.append(f"{progress_bar} {progress['completed']}/{progress['total']} ({progress['percentage']}%)")
+        else:
+            lines.append("📝 No checkpoints added yet")
         
         # Frequency with check-in day and next check date
         next_date = res['next_check_date'][:10] if res['next_check_date'] else "N/A"
