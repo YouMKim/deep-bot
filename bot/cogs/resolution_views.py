@@ -693,12 +693,34 @@ def build_resolution_list_embeds(
         if res['current_streak'] > 0:
             description_lines.append(f"🔥 Streak: {res['current_streak']} (Best: {res['longest_streak']})")
         
-        # List all checkpoints as bullet points (no length limit since we use description, not field)
+        # List checkpoints as bullet points
         if res['checkpoints']:
             description_lines.append("")  # Empty line separator
-            for cp in res['checkpoints']:
-                emoji = "✅" if cp['is_completed'] else "⬜"
-                description_lines.append(f"{emoji} {cp['text']}")
+            
+            # Check if these are weekly checkpoints (pattern: "Week X: <task>")
+            # For weekly checkpoints, show only unique incomplete task names
+            weekly_pattern = False
+            if res['checkpoints'] and res['checkpoints'][0]['text'].startswith("Week "):
+                weekly_pattern = True
+            
+            if weekly_pattern:
+                # Extract unique task names from incomplete weekly checkpoints
+                unique_tasks = set()
+                for cp in res['checkpoints']:
+                    if not cp['is_completed']:
+                        # Extract task name from "Week X: <task>"
+                        if ": " in cp['text']:
+                            task_name = cp['text'].split(": ", 1)[1]
+                            unique_tasks.add(task_name)
+                
+                # Show unique incomplete tasks
+                for task in sorted(unique_tasks):
+                    description_lines.append(f"⬜ {task}")
+            else:
+                # Regular checkpoints: show all
+                for cp in res['checkpoints']:
+                    emoji = "✅" if cp['is_completed'] else "⬜"
+                    description_lines.append(f"{emoji} {cp['text']}")
         
         # Build description (max 4096 characters for embed description)
         description = "\n".join(description_lines)
