@@ -693,30 +693,53 @@ def build_resolution_list_embed(
         
         # List all checkpoints as bullet points
         if res['checkpoints']:
-            lines.append("")  # Empty line separator
+            # Build base content first (without checkpoints)
+            base_content = "\n".join(lines)
+            base_length = len(base_content)
+            separator_length = 1  # "\n" separator between base and checkpoints
+            
             checkpoint_lines = []
             
-            # Build checkpoint list, checking length as we go
             for cp in res['checkpoints']:
                 emoji = "✅" if cp['is_completed'] else "⬜"
                 checkpoint_line = f"{emoji} {cp['text']}"
                 
-                # Test if adding this checkpoint would exceed 1024 char limit
-                test_lines = lines + checkpoint_lines + [checkpoint_line]
-                test_content = "\n".join(test_lines)
-                if len(test_content) > 1024:
-                    # Add truncation indicator and stop
+                # Calculate total length if we add this checkpoint
+                # Format: base_content + "\n" + "\n".join(checkpoint_lines + new_line)
+                test_checkpoints = checkpoint_lines + [checkpoint_line]
+                checkpoints_text = "\n".join(test_checkpoints)
+                total_length = base_length + separator_length + len(checkpoints_text)
+                
+                if total_length > 1024:
+                    # Try adding truncation message instead
                     remaining_count = len(res['checkpoints']) - len(checkpoint_lines)
-                    if remaining_count > 0:
-                        checkpoint_lines.append(f"*... and {remaining_count} more checkpoint(s)*")
+                    if remaining_count > 0 and checkpoint_lines:
+                        truncation_text = f"*... and {remaining_count} more checkpoint(s)*"
+                        checkpoints_with_truncation = "\n".join(checkpoint_lines) + "\n" + truncation_text
+                        truncation_length = base_length + separator_length + len(checkpoints_with_truncation)
+                        
+                        # Only add truncation if it fits
+                        if truncation_length <= 1024:
+                            checkpoint_lines.append(truncation_text)
                     break
                 
                 checkpoint_lines.append(checkpoint_line)
             
-            lines.extend(checkpoint_lines)
+            # Add checkpoints to lines
+            if checkpoint_lines:
+                lines.append("")  # Empty line separator
+                lines.extend(checkpoint_lines)
         
-        # Build field value from all lines
+        # Build field value from all lines and ensure it's within limit
         field_value = "\n".join(lines)
+        if len(field_value) > 1024:
+            # Final safety check: truncate at last complete line
+            truncated = field_value[:1020]
+            last_newline = truncated.rfind('\n')
+            if last_newline > 0:
+                field_value = truncated[:last_newline] + "\n..."
+            else:
+                field_value = truncated + "..."
         
         embed.add_field(
             name=f"#{display_id} {res['text'][:60]}{'...' if len(res['text']) > 60 else ''}{streak_text}",
