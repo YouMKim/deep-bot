@@ -697,13 +697,13 @@ def build_resolution_list_embed(
             checkpoint_lines = []
             
             # Build checkpoint list, checking length as we go
-            base_content = "\n".join(lines)
             for cp in res['checkpoints']:
                 emoji = "✅" if cp['is_completed'] else "⬜"
                 checkpoint_line = f"{emoji} {cp['text']}"
                 
-                # Test if adding this line would exceed 1024 char limit
-                test_content = base_content + "\n" + "\n".join(checkpoint_lines + [checkpoint_line])
+                # Test if adding this checkpoint would exceed 1024 char limit
+                test_lines = lines + checkpoint_lines + [checkpoint_line]
+                test_content = "\n".join(test_lines)
                 if len(test_content) > 1024:
                     # Add truncation indicator and stop
                     remaining_count = len(res['checkpoints']) - len(checkpoint_lines)
@@ -714,6 +714,9 @@ def build_resolution_list_embed(
                 checkpoint_lines.append(checkpoint_line)
             
             lines.extend(checkpoint_lines)
+        
+        # Build field value from all lines
+        field_value = "\n".join(lines)
         
         embed.add_field(
             name=f"#{display_id} {res['text'][:60]}{'...' if len(res['text']) > 60 else ''}{streak_text}",
