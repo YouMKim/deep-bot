@@ -153,12 +153,6 @@ Guidelines:
     CRONJOB_SCHEDULE_TIME: str = os.getenv("CRONJOB_SCHEDULE_TIME", "14:00")  # Time to run cronjob daily (HH:MM format, UTC). Default 14:00 UTC = 6 AM Pacific
     CRONJOB_ENABLED: bool = os.getenv("CRONJOB_ENABLED", "True").lower() == "true"  # Enable/disable cronjob scheduler
 
-    # Resolution Tracking Configuration
-    RESOLUTION_ENABLED: bool = os.getenv("RESOLUTION_ENABLED", "True").lower() == "true"  # Enable/disable resolution tracking
-    RESOLUTION_CHANNEL_ID: int = int(os.getenv("RESOLUTION_CHANNEL_ID", "0"))  # Channel to post check-in prompts
-    RESOLUTION_REMINDER_HOURS: int = int(os.getenv("RESOLUTION_REMINDER_HOURS", "24"))  # Hours before sending DM reminder
-    RESOLUTION_AUTO_SKIP_HOURS: int = int(os.getenv("RESOLUTION_AUTO_SKIP_HOURS", "48"))  # Hours before auto-skipping check-in
-
     @classmethod
     def load_blacklist(cls):
         """Load blacklisted user IDs from environment variable."""
