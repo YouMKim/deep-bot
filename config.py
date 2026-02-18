@@ -153,6 +153,10 @@ Guidelines:
     CRONJOB_SCHEDULE_TIME: str = os.getenv("CRONJOB_SCHEDULE_TIME", "14:00")  # Time to run cronjob daily (HH:MM format, UTC). Default 14:00 UTC = 6 AM Pacific
     CRONJOB_ENABLED: bool = os.getenv("CRONJOB_ENABLED", "True").lower() == "true"  # Enable/disable cronjob scheduler
 
+    # Prediction Market Configuration
+    PREDICTION_MARKET_ENABLED: bool = os.getenv("PREDICTION_MARKET_ENABLED", "True").lower() == "true"
+    PREDICTION_MARKET_INITIAL_BALANCE: int = int(os.getenv("PREDICTION_MARKET_INITIAL_BALANCE", "5000"))
+
     @classmethod
     def load_blacklist(cls):
         """Load blacklisted user IDs from environment variable."""
